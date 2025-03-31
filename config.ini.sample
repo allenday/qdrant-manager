@@ -1,0 +1,27 @@
+[default]
+qdrant_url = localhost
+qdrant_port = 6333
+qdrant_api_key = 
+qdrant_collection = my-collection
+
+# Collection defaults
+vector_size = 256
+distance = cosine
+indexing_threshold = 0
+
+[production]
+qdrant_url = your-production-instance.region.cloud.qdrant.io
+qdrant_port = 6333
+qdrant_api_key = your-api-key-here
+qdrant_collection = production-collection
+
+# Production might use different defaults
+vector_size = 1536
+distance = cosine
+indexing_threshold = 1000
+
+[local]
+qdrant_url = localhost
+qdrant_port = 6333
+qdrant_api_key = 
+qdrant_collection = test-collection

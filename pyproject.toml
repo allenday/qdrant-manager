@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qdrant-manager"
+version = "0.1.0"
+description = "Command-line tool for managing Qdrant vector database collections"
+readme = "README.md"
+authors = [
+    {name = "Allen Day", email = "allenday@example.com"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+]
+dependencies = [
+    "qdrant-client>=1.7.0",
+    "tqdm>=4.66.0",
+    "pyyaml>=6.0",
+    "appdirs>=1.4.4",
+]
+requires-python = ">=3.8"
+
+[project.urls]
+Homepage = "https://github.com/allenday/qdrant-manager"
+"Bug Reports" = "https://github.com/allenday/qdrant-manager/issues"
+
+[project.scripts]
+qdrant-manager = "qdrant_manager.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=6.0.0",
+]
+
+[tool.setuptools]
+packages = ["qdrant_manager"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "--cov=qdrant_manager"
+
+[tool.coverage.run]
+source = ["qdrant_manager"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise NotImplementedError",
+]

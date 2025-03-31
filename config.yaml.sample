@@ -1,0 +1,62 @@
+default:
+  connection:
+    url: localhost
+    port: 6333
+    api_key: ""
+    collection: my-collection
+  
+  vectors:
+    size: 256
+    distance: cosine
+    indexing_threshold: 0
+  
+  # Optional payload indices - uncomment and modify as needed
+  payload_indices:
+    - field: category
+      type: keyword
+    - field: created_at
+      type: datetime
+    - field: price
+      type: float
+    - field: description
+      type: text
+
+production:
+  connection:
+    url: your-production-instance.region.cloud.qdrant.io
+    port: 6333
+    api_key: your-api-key-here
+    collection: production-collection
+  
+  vectors:
+    # Typical size for OpenAI ada-002 embeddings
+    size: 1536
+    distance: cosine
+    # Higher threshold for better indexing performance
+    indexing_threshold: 1000
+  
+  # Define production indices
+  payload_indices:
+    - field: product_id
+      type: keyword
+    - field: sku
+      type: keyword
+    - field: price
+      type: float
+    - field: in_stock
+      type: keyword
+    - field: timestamp
+      type: datetime
+
+# You can define as many profiles as needed
+development:
+  connection:
+    url: localhost
+    port: 6333
+    api_key: ""
+    collection: dev-collection
+  
+  vectors:
+    size: 768
+    distance: cosine
+    indexing_threshold: 0
