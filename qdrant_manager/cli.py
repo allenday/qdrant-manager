@@ -74,7 +74,7 @@ def initialize_qdrant_client(env_vars):
         logger.error(f"Failed to connect to Qdrant: {e}")
         sys.exit(1)
 
-def create_collection(client, collection_name, overwrite=False, vector_size=256, distance=models.Distance.COSINE, indexing_threshold=0):
+def create_collection(client, collection_name, overwrite=False, vector_size=256, distance=models.Distance.COSINE, indexing_threshold=0, args=None):
     """Create a new Qdrant collection.
     
     Args:
@@ -84,6 +84,7 @@ def create_collection(client, collection_name, overwrite=False, vector_size=256,
         vector_size: Size of the vector dimension for the collection
         distance: Distance function for vector similarity (from models.Distance enum)
         indexing_threshold: Number of vectors to collect before indexing (0 for immediate)
+        args: Command line arguments
     """
     try:
         # Check if collection exists
@@ -118,7 +119,7 @@ def create_collection(client, collection_name, overwrite=False, vector_size=256,
         logger.info(f"Collection '{collection_name}' created successfully")
         
         # Create payload indices if specified in the configuration
-        if hasattr(args, 'payload_indices') and args.payload_indices:
+        if args and hasattr(args, 'payload_indices') and args.payload_indices:
             logger.info("Creating payload indices from configuration...")
             
             # Map string type names to Qdrant schema types
@@ -857,7 +858,7 @@ Example selectors:
         
         distance = distance_map.get(distance_str, models.Distance.COSINE)
         
-        create_collection(client, collection_name, args.overwrite, vector_size, distance, indexing_threshold)
+        create_collection(client, collection_name, args.overwrite, vector_size, distance, indexing_threshold, args)
     
     elif args.command == "delete":
         delete_collection(client, collection_name)

@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 setup(
     name='qdrant-manager',
-    version='0.1.1',
+    version='0.1.3',
     description='Command-line tool for managing Qdrant vector database collections',
     long_description=long_description,
     long_description_content_type='text/markdown',
