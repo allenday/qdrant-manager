@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 setup(
     name='qdrant-manager',
-    version='0.1.0',
+    version='0.1.1',
     description='Command-line tool for managing Qdrant vector database collections',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -27,7 +27,7 @@ setup(
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
-        'License :: OSI Approved :: MIT License',
+        'License :: OSI Approved :: Apache Software License',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',

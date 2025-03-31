@@ -4,17 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qdrant-manager"
-version = "0.1.0"
+version = "0.1.1"
 description = "Command-line tool for managing Qdrant vector database collections"
 readme = "README.md"
 authors = [
     {name = "Allen Day", email = "allenday@example.com"}
 ]
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
