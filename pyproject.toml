@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qdrant-manager"
-version = "0.1.4"
+version = "0.1.5"
 description = "Command-line tool for managing Qdrant vector database collections"
 readme = "README.md"
 authors = [
@@ -42,7 +42,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["qdrant_manager"]
+packages = ["qdrant_manager", "qdrant_manager.commands"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
