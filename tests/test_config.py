@@ -7,6 +7,7 @@ import yaml
 import os
 from pathlib import Path
 from unittest.mock import patch
+import json
 
 from qdrant_manager.config import (
     get_config_dir, 
@@ -18,7 +19,8 @@ from qdrant_manager.config import (
     get_profiles, 
     update_config,
     CONFIG_FILENAME,
-    DEFAULT_PROFILE
+    DEFAULT_PROFILE,
+    load_configuration
 )
 
 def test_config_dir():
@@ -445,3 +447,144 @@ def test_load_config_yaml_error():
                     pass
                 # Verify sys.exit would be called
                 mock_exit.assert_called()
+
+def test_load_configuration_default():
+    """Test loading configuration with default settings."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a temporary JSON config file
+        config_path = os.path.join(tmp_dir, "config.json")
+        test_config = {
+            "url": "test-url",
+            "port": 6333,
+            "api_key": "test-key"
+        }
+        
+        with open(config_path, "w") as f:
+            json.dump(test_config, f)
+        
+        # Test loading the config file
+        config = load_configuration(config_path)
+        
+        # Verify the config was loaded correctly
+        assert config["url"] == "test-url"
+        assert config["port"] == 6333
+        assert config["api_key"] == "test-key"
+
+def test_load_configuration_with_profile():
+    """Test loading configuration with a specific profile."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a temporary JSON config file with profiles
+        config_path = os.path.join(tmp_dir, "config.json")
+        test_config = {
+            "profiles": {
+                "dev": {
+                    "url": "dev-url",
+                    "port": 6333
+                },
+                "prod": {
+                    "url": "prod-url",
+                    "port": 6334
+                }
+            }
+        }
+        
+        with open(config_path, "w") as f:
+            json.dump(test_config, f)
+        
+        # Test loading a specific profile
+        config = load_configuration(config_path, profile="prod")
+        
+        # Verify the correct profile was loaded
+        assert config["url"] == "prod-url"
+        assert config["port"] == 6334
+
+def test_load_configuration_file_not_found():
+    """Test handling when configuration file is not found."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Use a path to a file that doesn't exist
+        config_path = os.path.join(tmp_dir, "nonexistent.json")
+        
+        # Test loading the nonexistent file
+        with patch('qdrant_manager.config.logger') as mock_logger:
+            config = load_configuration(config_path)
+            
+            # Verify warning was logged and empty dict was returned
+            mock_logger.warning.assert_called()
+            assert config == {}
+
+def test_load_configuration_json_error():
+    """Test handling JSON parsing errors in configuration file."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create an invalid JSON file
+        config_path = os.path.join(tmp_dir, "invalid.json")
+        
+        with open(config_path, "w") as f:
+            f.write("{ invalid json")
+        
+        # Test loading the invalid file
+        with patch('qdrant_manager.config.logger') as mock_logger:
+            config = load_configuration(config_path)
+            
+            # Verify error was logged and empty dict was returned
+            mock_logger.error.assert_called()
+            assert config == {}
+
+def test_load_configuration_other_error():
+    """Test handling other errors when loading configuration file."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a temp file that will cause a different error (e.g., permission error)
+        config_path = os.path.join(tmp_dir, "error.json")
+        
+        # Mock open to raise an exception
+        with patch('builtins.open', side_effect=Exception("Test error")):
+            with patch('qdrant_manager.config.logger') as mock_logger:
+                config = load_configuration(config_path)
+                
+                # Verify error was logged (we don't know which logger method might be called)
+                # So check that we got an empty dict and that at least one logger method was called
+                assert config == {}
+                assert mock_logger.method_calls, "Expected at least one logger method to be called"
+
+def test_load_configuration_profile_not_found():
+    """Test handling when profile is not found in configuration."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a config file with profiles
+        config_path = os.path.join(tmp_dir, "config.json")
+        test_config = {
+            "profiles": {
+                "dev": {
+                    "url": "dev-url"
+                }
+            }
+        }
+        
+        with open(config_path, "w") as f:
+            json.dump(test_config, f)
+        
+        # Test loading a nonexistent profile
+        with patch('qdrant_manager.config.logger') as mock_logger:
+            config = load_configuration(config_path, profile="nonexistent")
+            
+            # Verify warning was logged and empty dict was returned
+            mock_logger.warning.assert_called()
+            assert config == {}
+
+def test_load_configuration_no_profiles_section():
+    """Test handling when profiles section is missing in configuration."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a config file without profiles section
+        config_path = os.path.join(tmp_dir, "config.json")
+        test_config = {
+            "url": "test-url"
+        }
+        
+        with open(config_path, "w") as f:
+            json.dump(test_config, f)
+        
+        # Test loading with a profile when profiles section doesn't exist
+        with patch('qdrant_manager.config.logger') as mock_logger:
+            config = load_configuration(config_path, profile="any")
+            
+            # Verify warning was logged and empty dict was returned
+            mock_logger.warning.assert_called()
+            assert config == {}

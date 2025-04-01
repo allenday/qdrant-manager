@@ -16,13 +16,13 @@ A general-purpose command-line tool for managing Qdrant vector database collecti
 ## Installation
 
 ```bash
-# From PyPI (once published)
-pip install qdrant-manager
+# From PyPI
+pipx install qdrant-manager
 
 # From source
 git clone https://github.com/allenday/qdrant-manager.git
 cd qdrant-manager
-pip install -e .
+pipx install -e .
 ```
 
 ## Configuration

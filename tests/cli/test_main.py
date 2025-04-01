@@ -1,7 +1,16 @@
 """Tests for the CLI main function."""
 import pytest
 from unittest.mock import patch, MagicMock
+import sys
+
 from qdrant_manager.cli import main
+from qdrant_manager.commands.create import create_collection
+from qdrant_manager.commands.delete import delete_collection
+from qdrant_manager.commands.list_cmd import list_collections
+from qdrant_manager.commands.info import collection_info
+from qdrant_manager.commands.batch import batch_operations
+from qdrant_manager.commands.get import get_points
+from qdrant_manager.utils import load_configuration, initialize_qdrant_client
 from pathlib import Path
 
 
@@ -53,7 +62,7 @@ def test_main_create():
     with patch('sys.argv', ['qdrant-manager', 'create', '--collection', 'test-collection']):
         with patch('qdrant_manager.cli.load_configuration') as mock_load_config:
             mock_load_config.return_value = {
-                "url": "test-url", 
+                "url": "test-url",
                 "port": 1234,
                 "api_key": "test-key",
                 "collection": "default-collection",
@@ -66,18 +75,25 @@ def test_main_create():
                 mock_client = MagicMock()
                 mock_init_client.return_value = mock_client
                 with patch('qdrant_manager.cli.create_collection') as mock_create_collection:
-                    with patch('qdrant_manager.cli.models.Distance') as mock_distance:
-                        mock_distance.COSINE = "cosine"
-                        main()
-                        # Check that create_collection was called with the right parameters
-                        mock_create_collection.assert_called_once_with(
-                            mock_client, 
-                            "test-collection", 
-                            False, 
-                            256, 
-                            mock_distance.COSINE, 
-                            0
-                        )
+                    # We don't need to mock models.Distance here as it's handled inside create_collection
+                    # with patch('qdrant_manager.cli.models.Distance') as mock_distance:
+                    #    mock_distance.COSINE = "cosine"
+                    main()
+                    # Check that create_collection was called with the right parameters
+                    mock_create_collection.assert_called_once()
+                    # call_args[0] contains positional arguments
+                    call_args_list = mock_create_collection.call_args[0]
+                    assert call_args_list[0] == mock_client # client
+                    assert call_args_list[1] == "test-collection" # collection_name
+                    assert call_args_list[2] == False  # overwrite
+                    # config is args_list[3], args is args_list[4]
+                    assert isinstance(call_args_list[3], dict) # config
+                    assert hasattr(call_args_list[4], 'size') # args object
+                    # We should check the args passed *to* create_collection (which are derived from config/CLI args)
+                    # For example, check the args object passed to create_collection
+                    passed_args = call_args_list[4]
+                    assert passed_args.size is None # As size wasn't passed via CLI in this test
+                    assert passed_args.distance is None # As distance wasn't passed via CLI
 
 
 def test_main_delete():

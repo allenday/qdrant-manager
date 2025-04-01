@@ -5,13 +5,18 @@ Configuration management for Qdrant Manager using YAML.
 import os
 import sys
 import yaml
+import json
+import logging
 from pathlib import Path
 import appdirs
+from typing import Dict, Any, Optional
 
-__all__ = ['load_config', 'get_profiles', 'update_config', 'create_default_config', 'get_config_dir']
+__all__ = ['load_config', 'get_profiles', 'update_config', 'create_default_config', 'get_config_dir', 'load_configuration']
 
 CONFIG_FILENAME = "config.yaml"
 DEFAULT_PROFILE = "default"
+
+logger = logging.getLogger(__name__)
 
 def get_config_dir():
     """Get the configuration directory."""
@@ -189,3 +194,43 @@ def update_config(profile, section, key, value):
     # Write the updated config
     with open(config_file, 'w') as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+def load_configuration(config_file: Optional[str] = None, profile: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Load configuration from a JSON file.
+
+    Args:
+        config_file (str, optional): Path to the configuration file. If not provided,
+            looks for config.json in the current directory.
+        profile (str, optional): Profile name to use from the configuration file.
+
+    Returns:
+        dict: Configuration dictionary.
+    """
+    if not config_file:
+        config_file = "config.json"
+
+    if not os.path.exists(config_file):
+        logger.warning(f"Configuration file {config_file} not found.")
+        return {}
+
+    try:
+        with open(config_file, "r") as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing configuration file: {e}")
+        return {}
+    except Exception as e:
+        logger.error(f"Error reading configuration file: {e}")
+        return {}
+
+    if profile:
+        if "profiles" not in config:
+            logger.warning(f"No profiles found in configuration file.")
+            return {}
+        if profile not in config["profiles"]:
+            logger.warning(f"Profile {profile} not found in configuration file.")
+            return {}
+        return config["profiles"][profile]
+
+    return config

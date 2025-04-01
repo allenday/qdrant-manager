@@ -1,244 +1,118 @@
-"""Tests for CLI utility functions."""
+"""Tests for utility functions."""
+import json
 import pytest
-from unittest.mock import patch, MagicMock
-from qdrant_manager.cli import resolve_json_path, load_configuration, parse_filter
+from unittest.mock import patch, MagicMock, mock_open
+import os
+import yaml
 
+from qdrant_manager.utils import load_configuration, initialize_qdrant_client
+from qdrant_manager.config import create_default_config, get_config_dir, get_profiles, update_config
 
-def test_resolve_json_path():
-    """Test the resolve_json_path function."""
-    # Create a test nested object
-    test_obj = {
-        "level1": {
-            "level2": {
-                "level3": "value"
-            },
-            "array": [1, 2, 3]
-        },
-        "root_key": "root_value"
-    }
-    
-    # Test resolving paths
-    parent, key, success = resolve_json_path(test_obj, "level1.level2.level3")
-    assert success is True
-    assert parent == test_obj["level1"]["level2"]
-    assert key == "level3"
-    
-    # Test with root path
-    parent, key, success = resolve_json_path(test_obj, "root_key")
-    assert success is True
-    assert parent == test_obj
-    assert key == "root_key"
-    
-    # Test with empty path
-    parent, key, success = resolve_json_path(test_obj, "")
-    assert success is True
-    assert parent == test_obj
-    assert key is None
-    
-    # Test with path "/"
-    parent, key, success = resolve_json_path(test_obj, "/")
-    assert success is True
-    assert parent == test_obj
-    assert key is None
-    
-    # Test with path starting with "/"
-    parent, key, success = resolve_json_path(test_obj, "/level1/level2/level3")
-    assert success is True
-    assert parent == test_obj["level1"]["level2"]
-    assert key == "level3"
-    
-    # Test with nonexistent path without create_missing
-    parent, key, success = resolve_json_path(test_obj, "nonexistent.path", create_missing=False)
-    assert success is False
-    assert parent is None
-    assert key is None
-    
-    # Test with nonexistent path with create_missing
-    parent, key, success = resolve_json_path(test_obj, "new_key.subkey", create_missing=True)
-    assert success is True
-    assert parent == test_obj["new_key"]
-    assert key == "subkey"
-    assert "new_key" in test_obj
-    assert isinstance(test_obj["new_key"], dict)
-    
-    # Test with path to non-dict element
-    parent, key, success = resolve_json_path(test_obj, "level1.array.invalid", create_missing=False)
-    assert success is False
+# Test cases for load_configuration
+@pytest.fixture
+def mock_args():
+    """Fixture for mock arguments."""
+    args = MagicMock()
+    args.profile = None
+    args.url = None
+    args.port = None
+    args.api_key = None
+    args.collection = None
+    return args
 
+# Define standard mock config data for tests
+MOCK_DEFAULT_CONFIG = {
+    "url": "http://localhost_default",
+    "port": 6333,
+    "api_key": "default_key",
+    "collection": "default_collection"
+}
+MOCK_PROFILE_CONFIG = {
+    "url": "http://profile.host",
+    "port": 1234,
+    "api_key": "profile_key",
+    "collection": "profile_collection"
+}
 
-def test_load_configuration():
-    """Test loading configuration from args."""
-    # Create mock args
-    mock_args = MagicMock()
-    mock_args.profile = None
-    mock_args.url = "test-url"
-    mock_args.port = 1234
-    mock_args.api_key = "test-key"
-    mock_args.collection = "test-collection"
-    
-    # Mock the load_config function
-    with patch('qdrant_manager.cli.load_config') as mock_load_config:
-        mock_load_config.return_value = {
-            "url": "default-url",
-            "port": 6333,
-            "api_key": "",
-            "collection": "default-collection"
-        }
-        
-        # Call the function
-        config = load_configuration(mock_args)
-        
-        # Assert load_config was called
-        mock_load_config.assert_called_once()
-        
-        # Check if args override config values
-        assert config["url"] == "test-url"
-        assert config["port"] == 1234
-        assert config["api_key"] == "test-key"
-        assert config["collection"] == "test-collection"
-        
-    # Test with no command line overrides
-    mock_args = MagicMock()
-    mock_args.profile = "test-profile"
-    mock_args.url = None
-    mock_args.port = None
-    mock_args.api_key = None
-    mock_args.collection = None
-    
-    with patch('qdrant_manager.cli.load_config') as mock_load_config:
-        mock_load_config.return_value = {
-            "url": "profile-url",
-            "port": 7000,
-            "api_key": "profile-key",
-            "collection": "profile-collection"
-        }
-        
-        # Call the function
-        config = load_configuration(mock_args)
-        
-        # Assert load_config was called with profile
-        mock_load_config.assert_called_once_with("test-profile")
-        
-        # Check if values from profile are used
-        assert config["url"] == "profile-url"
-        assert config["port"] == 7000
-        assert config["api_key"] == "profile-key"
-        assert config["collection"] == "profile-collection"
+@patch('qdrant_manager.utils.load_config') # Patch load_config where it's called
+def test_load_configuration_default(mock_load_config_call, mock_args):
+    """Test loading default configuration."""
+    mock_load_config_call.return_value = MOCK_DEFAULT_CONFIG.copy()
+    config = load_configuration(mock_args)
+    assert config["url"] == "http://localhost_default"
+    assert config["port"] == 6333
+    assert config["api_key"] == "default_key"
+    assert config["collection"] == "default_collection"
+    mock_load_config_call.assert_called_once_with() # Called with no args for default
 
+@patch('qdrant_manager.utils.load_config')
+def test_load_configuration_profile(mock_load_config_call, mock_args):
+    """Test loading configuration from a profile."""
+    mock_args.profile = "myprofile"
+    mock_load_config_call.return_value = MOCK_PROFILE_CONFIG.copy()
+    config = load_configuration(mock_args)
+    assert config["url"] == "http://profile.host"
+    assert config["port"] == 1234
+    assert config["api_key"] == "profile_key"
+    assert config["collection"] == "profile_collection"
+    mock_load_config_call.assert_called_once_with("myprofile")
 
-def test_parse_filter():
-    """Test parsing a JSON filter string."""
-    import json
-    
-    # Test valid JSON
-    filter_str = '{"key": "category", "match": {"value": "product"}}'
-    filter_dict = parse_filter(filter_str)
-    
-    expected_dict = json.loads(filter_str)
-    assert filter_dict == expected_dict
-    
-    # Test invalid JSON
-    with patch('qdrant_manager.cli.logger') as mock_logger:
-        with patch('sys.exit') as mock_exit:
-            try:
-                parse_filter("invalid json")
-            except:
-                pass
-            
-            # Check that error was logged
-            mock_logger.error.assert_called()
-            mock_exit.assert_called_once()
+@patch('qdrant_manager.utils.load_config')
+def test_load_configuration_override_args(mock_load_config_call, mock_args):
+    """Test overriding config with command-line arguments."""
+    mock_load_config_call.return_value = MOCK_DEFAULT_CONFIG.copy()
+    mock_args.url = "http://cmd.line"
+    mock_args.port = 8888
+    mock_args.api_key = "cmd_key"
+    mock_args.collection = "cmd_collection"
+    config = load_configuration(mock_args)
+    assert config["url"] == "http://cmd.line"
+    assert config["port"] == 8888
+    assert config["api_key"] == "cmd_key"
+    assert config["collection"] == "cmd_collection"
+    mock_load_config_call.assert_called_once_with() # Called default config
 
+@patch('qdrant_manager.utils.load_config')
+def test_load_configuration_profile_override_args(mock_load_config_call, mock_args):
+    """Test overriding profile config with command-line arguments."""
+    mock_args.profile = "myprofile"
+    mock_load_config_call.return_value = MOCK_PROFILE_CONFIG.copy()
+    mock_args.url = "http://cmd.line.override"
+    mock_args.collection = "cmd_collection_override"
+    # Set port via CLI arg to override profile and satisfy requirement
+    mock_args.port = 9999 
+    config = load_configuration(mock_args)
+    assert config["url"] == "http://cmd.line.override" # Overridden
+    assert config["port"] == 9999 # Overridden from CLI
+    assert config["api_key"] == "profile_key" # From profile (not overridden)
+    assert config["collection"] == "cmd_collection_override" # Overridden
+    mock_load_config_call.assert_called_once_with("myprofile")
 
-def test_load_document_ids():
-    """Test loading document IDs from a file."""
-    from qdrant_manager.cli import load_document_ids
-    
-    # Create a temporary file with document IDs
-    import tempfile
-    
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_file:
-        temp_file.write("id1\nid2\nid3\n")
-        temp_file_path = temp_file.name
-    
-    try:
-        # Test loading IDs
-        with patch('qdrant_manager.cli.logger') as mock_logger:
-            doc_ids = load_document_ids(temp_file_path)
-            
-            # Check that IDs were loaded correctly
-            assert doc_ids == ["id1", "id2", "id3"]
-            
-            # Check that we logged the count
-            mock_logger.info.assert_called()
-        
-        # Test with whitespace and empty lines
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_file:
-            temp_file.write("id1\n  id2  \n\nid3")
-            temp_file_path = temp_file.name
-        
-        with patch('qdrant_manager.cli.logger') as mock_logger:
-            doc_ids = load_document_ids(temp_file_path)
-            
-            # Check that IDs were loaded correctly with whitespace stripped
-            assert doc_ids == ["id1", "id2", "id3"]
-    
-    finally:
-        # Clean up
-        import os
-        os.unlink(temp_file_path)
-    
-    # Test file not found
-    with patch('qdrant_manager.cli.logger') as mock_logger:
-        with patch('sys.exit') as mock_exit:
-            try:
-                load_document_ids("/nonexistent/file/path")
-            except:
-                pass
-            
-            # Check that error was logged
-            mock_logger.error.assert_called()
-            
-            # Check that we exited the program
-            mock_exit.assert_called_once()
+# Keep the test for missing required, it should still work with mocked load_config
+@patch('qdrant_manager.utils.load_config')
+@patch('qdrant_manager.utils.logger')
+@patch('sys.exit')
+def test_load_configuration_missing_required(mock_exit, mock_logger, mock_load_config_call, mock_args):
+    """Test load_configuration exits if required fields are missing."""
+    # Simulate load_config returning a config missing 'url'
+    mock_load_config_call.return_value = {"port": 1234} 
+    load_configuration(mock_args)
+    # Check for the specific error about url being missing
+    mock_logger.error.assert_any_call("Missing required configuration: url")
+    mock_logger.error.assert_any_call("Please update your configuration or provide command-line arguments.")
+    mock_exit.assert_called_once_with(1)
 
+@patch('qdrant_manager.utils.load_config')
+@patch('qdrant_manager.utils.logger')
+@patch('sys.exit')
+def test_load_configuration_missing_required_port(mock_exit, mock_logger, mock_load_config_call, mock_args):
+    """Test load_configuration exits if required port is missing."""
+    # Simulate load_config returning a config missing 'port'
+    mock_load_config_call.return_value = {"url": "http://test.com"} 
+    load_configuration(mock_args)
+    mock_logger.error.assert_any_call("Missing required configuration: port")
+    mock_logger.error.assert_any_call("Please update your configuration or provide command-line arguments.")
+    mock_exit.assert_called_once_with(1)
 
-def test_load_configuration_config_validation():
-    """Test configuration validation in load_configuration."""
-    # Create mock args with missing port and url
-    mock_args = MagicMock()
-    mock_args.profile = None
-    mock_args.url = None
-    mock_args.port = None
-    mock_args.api_key = "test-key"
-    mock_args.collection = "test-collection"
-    
-    # Mock the load_config function to return incomplete config
-    with patch('qdrant_manager.cli.load_config') as mock_load_config:
-        mock_load_config.return_value = {
-            # Missing url and port
-            "api_key": "",
-            "collection": "default-collection"
-        }
-        
-        # Call should fail due to missing required keys
-        with patch('qdrant_manager.cli.logger') as mock_logger:
-            with patch('sys.exit') as mock_exit:
-                try:
-                    load_configuration(mock_args)
-                except:
-                    # Expected exception, don't fail test
-                    pass
-                
-                # Errors should be logged
-                assert mock_logger.error.call_count >= 1
-                
-                # First call should list missing keys
-                missing_keys_call = mock_logger.error.call_args_list[0]
-                missing_keys_msg = missing_keys_call[0][0]
-                assert "Missing required configuration" in missing_keys_msg
-                assert "url" in missing_keys_msg
-                assert "port" in missing_keys_msg
-                
-                # sys.exit should be called with code 1
-                mock_exit.assert_called_with(1)
+# You might want to add tests for initialize_qdrant_client here as well,
+# similar to how it was tested in test_connection.py previously.

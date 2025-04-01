@@ -1,7 +1,9 @@
 """Tests for Qdrant connection functionality."""
 import pytest
 from unittest.mock import patch, MagicMock
-from qdrant_manager.cli import initialize_qdrant_client
+
+from qdrant_manager.utils import initialize_qdrant_client
+from qdrant_client import QdrantClient
 
 
 def test_initialize_qdrant_client():
@@ -13,14 +15,16 @@ def test_initialize_qdrant_client():
         "api_key": "test-key"
     }
     
-    # Mock QdrantClient class
-    with patch('qdrant_manager.cli.QdrantClient') as mock_client_class:
+    # Mock QdrantClient class within the correct module (utils)
+    with patch('qdrant_manager.utils.QdrantClient') as mock_client_class:
         # Create a mock client instance
         mock_client = MagicMock()
+        # Mock the get_collections call used for connection testing
+        mock_client.get_collections.return_value = MagicMock() 
         mock_client_class.return_value = mock_client
         
-        # Call the function
-        with patch('qdrant_manager.cli.logger') as mock_logger:
+        # Call the function, patching the logger in utils
+        with patch('qdrant_manager.utils.logger') as mock_logger:
             with patch('sys.exit') as mock_exit:
                 client = initialize_qdrant_client(env_vars)
                 
@@ -41,23 +45,20 @@ def test_initialize_qdrant_client():
                 mock_exit.assert_not_called()
     
     # Test connection failure
-    with patch('qdrant_manager.cli.QdrantClient') as mock_client_class:
-        # Make the client raise an exception
+    with patch('qdrant_manager.utils.QdrantClient') as mock_client_class:
+        # Make the client raise an exception during connection test
         mock_client = MagicMock()
         mock_client.get_collections.side_effect = Exception("Connection failed")
         mock_client_class.return_value = mock_client
         
-        # Call the function
-        with patch('qdrant_manager.cli.logger') as mock_logger:
+        # Call the function, patching the logger in utils
+        with patch('qdrant_manager.utils.logger') as mock_logger:
             with patch('sys.exit') as mock_exit:
-                try:
-                    initialize_qdrant_client(env_vars)
-                except:
-                    # We expect the function to call sys.exit
-                    pass
-                
+                # initialize_qdrant_client calls sys.exit on failure
+                initialize_qdrant_client(env_vars)
+                 
                 # Check that error was logged
-                mock_logger.error.assert_called()
+                mock_logger.error.assert_called_with("Failed to connect to Qdrant: Connection failed")
                 
                 # Check that we exited the program
-                mock_exit.assert_called_once()
+                mock_exit.assert_called_once_with(1)
