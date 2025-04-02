@@ -1,63 +1,84 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "qdrant-manager"
-version = "0.1.6"
-description = "Command-line tool for managing Qdrant vector database collections"
-readme = "README.md"
+name = "solr-manager"
+version = "0.2.0"
 authors = [
-    {name = "Allen Day", email = "allenday@example.com"}
+    {name = "Allen Day", email = "allenday@google.com"}
 ]
-license = {text = "Apache-2.0"}
+description = "A command-line tool for managing SolrCloud collections and documents."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+keywords = ["solr", "solrcloud", "cli", "database", "search", "manager"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Database",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
 ]
 dependencies = [
-    "qdrant-client>=1.7.0",
-    "tqdm>=4.66.0",
-    "pyyaml>=6.0",
-    "appdirs>=1.4.4",
+    "click >= 8.0",
+    "pyyaml >= 6.0",
+    "requests >= 2.20",
+    "rich >= 12.0",
+    "jsonpath-ng >= 1.5",
+    "pysolr >= 3.9.0",
+    "appdirs >= 1.4.4",
+    "tqdm >= 4.60"
 ]
-requires-python = ">=3.8"
 
 [project.urls]
-Homepage = "https://github.com/allenday/qdrant-manager"
-"Bug Reports" = "https://github.com/allenday/qdrant-manager/issues"
+"Homepage" = "https://github.com/allenday/solr-manager"
+"Bug Tracker" = "https://github.com/allenday/solr-manager/issues"
 
 [project.scripts]
-qdrant-manager = "qdrant_manager.cli:main"
+solr-manager = "solr_manager.cli:main"
+
+[tool.setuptools]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["solr_manager*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
+testpaths = [
+    "tests",
+]
+addopts = "-v -s --cov=solr_manager --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["solr_manager"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
 
 [project.optional-dependencies]
+zookeeper = ["kazoo >= 2.10.0"]
 dev = [
     "pytest>=6.0.0",
     "pytest-cov>=6.0.0",
-]
-
-[tool.setuptools]
-packages = ["qdrant_manager", "qdrant_manager.commands"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-addopts = "--cov=qdrant_manager"
-
-[tool.coverage.run]
-source = ["qdrant_manager"]
-omit = ["tests/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "if __name__ == .__main__.:",
-    "pass",
-    "raise NotImplementedError",
 ]

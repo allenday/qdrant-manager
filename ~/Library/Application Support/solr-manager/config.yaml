@@ -1,0 +1,32 @@
+default:
+  connection:
+    # Base URL of a Solr node (e.g., "http://localhost:8983/solr").
+    # Required for admin commands (list, create, delete, info) *unless* zk_hosts is provided for discovery.
+    # If both solr_url and zk_hosts are provided, solr_url is prioritized for admin commands.
+    # The batch command will prefer zk_hosts if available for its direct SolrClient init.
+    # solr_url: "http://localhost:8983/solr" # Commented out for current ZK testing
+    
+    # The target Solr collection name (used by commands like batch if --collection is omitted)
+    collection: "solr_manager_test"
+
+    # --- Optional: Authentication ---
+    # Uncomment and provide credentials if your Solr instance requires authentication
+    # username: "your_solr_username"
+    # password: "your_solr_password"
+
+    # --- Optional: ZooKeeper Connection (for SolrCloud discovery & batch command) ---
+    # Comma-separated ZK host:port pairs (e.g., "zk1:2181,zk2:2181").
+    # If provided and solr_url is *not* set, the tool will query ZK's /live_nodes 
+    # to find a base Solr URL for admin commands.
+    # The batch command *always* prefers using zk_hosts if available.
+    zk_hosts: "localhost:2181" # Use the ZK from docker-compose
+
+production:
+  connection:
+    solr_url: "http://your-production-solr-node:8983/solr"
+    collection: "production_solr_collection"
+    # Optional: Production credentials
+    # username: "prod_username"
+    # password: "prod_password"
+    # Optional: Production ZooKeeper
+    # zk_hosts: "zk-prod1:2181,zk-prod2:2181/solr-prod" 

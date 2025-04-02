@@ -1,184 +1,127 @@
-# Qdrant Manager
+# solr-manager
 
-A general-purpose command-line tool for managing Qdrant vector database collections and documents. Simplifies common Qdrant management tasks through a CLI interface.
+A general-purpose command-line tool for managing SolrCloud collections and documents. Simplifies common Solr management tasks through a CLI interface.
 
 ## Features
 
-- Create, delete, and list collections
-- Get detailed information about collections
-- Retrieve points from collections with flexible query options
+- Create, delete, and list Solr collections
+- Get detailed information about Solr collections (e.g., schema, status)
+- Retrieve documents from collections with flexible query options (Solr query syntax)
 - Batch operations on documents:
-  - Add fields to documents
+  - Add/Update fields in documents
   - Delete fields from documents
-  - Replace fields in documents
-- Support for JSON path selectors for precise document modifications
+  - Delete documents by query or ID
+- Support for standard Solr query syntax and filters
 - Multiple configuration profiles support
 
 ## Installation
 
 ```bash
-# From PyPI
-pipx install qdrant-manager
+# From PyPI (once published)
+# pipx install solr-manager 
 
 # From source
-git clone https://github.com/allenday/qdrant-manager.git
-cd qdrant-manager
+git clone https://github.com/allenday/qdrant-manager.git # Repository URL might change
+cd qdrant-manager # Directory name might change
 pipx install -e .
 ```
 
 ## Configuration
 
-When first run, qdrant-manager will create a configuration file at:
-- Linux/macOS: `~/.config/qdrant-manager/config.yaml`
-- Windows: `%APPDATA%\qdrant-manager\config.yaml`
+The CLI tool uses a configuration file (`config.yaml`) located in a platform-specific application support directory (e.g., `~/.config/solr-manager/` on Linux, `~/Library/Application Support/solr-manager/` on macOS). You can generate a default config using `solr-manager config generate`.
 
-You can edit this file to add your Qdrant connection details and schema configuration:
+**Key Configuration Options:**
 
-```yaml
-default:
-  connection:
-    url: localhost
-    port: 6333
-    api_key: ""
-    collection: my-collection
-  
-  vectors:
-    size: 256
-    distance: cosine
-    indexing_threshold: 0
-  
-  # Optional payload indices for optimized searching
-  payload_indices:
-    - field: category
-      type: keyword
-    - field: created_at
-      type: datetime
-    - field: price
-      type: float
+*   `connection`:
+    *   `solr_url`: The base URL of **a** Solr node (e.g., `http://localhost:8983/solr`). This is used for both admin tasks (like listing collections via the Collections API) and collection-specific tasks (like adding documents).
+    *   `zk_hosts`: **Alternatively**, for SolrCloud, you can provide a comma-separated list of ZooKeeper hosts (e.g., `zk1:2181,zk2:2181/solr`).
+        *   If `solr_url` is **not** provided, the tool will attempt to discover a live Solr node via ZooKeeper to determine the base URL needed for admin commands (`list`, `create`, `delete`, `info`).
+        *   The `batch` command will **always** use `zk_hosts` if available to initialize its `SolrClient` for interacting with a specific collection, regardless of whether `solr_url` is also present.
+    *   `collection`: The default target Solr collection name for commands like `batch` or `get` if not specified via `--collection`.
+    *   `username` / `password`: Optional Basic Authentication credentials.
+*   `defaults`:
+    *   `timeout`: Default request timeout in seconds.
+    *   `batch_size`: Default number of documents per batch for `batch` commands.
+    *   `commit_within`: Default `commitWithin` value for `batch --add-update`.
 
-production:
-  connection:
-    url: your-production-instance.region.cloud.qdrant.io
-    port: 6333
-    api_key: your-production-api-key
-    collection: production-collection
-  
-  vectors:
-    size: 1536  # For OpenAI embeddings
-    distance: cosine
-    indexing_threshold: 1000
-  
-  payload_indices:
-    - field: product_id
-      type: keyword
-    - field: timestamp
-      type: datetime
-```
+*   `logging`:
+    *   `level`: Logging level (e.g., `DEBUG`, `INFO`, `WARNING`, `ERROR`).
+    *   `format`: Log message format.
 
-Each profile can define its own:
-- Connection settings 
-- Vector configuration (size, distance metric, indexing behavior)
-- Payload indices for optimized search performance
+**Profiles:**
 
-The YAML format makes it easy to maintain a clean, organized configuration across multiple environments.
-
-You can switch between profiles using the `--profile` flag:
-
-```bash
-qdrant-manager --profile production list
-```
-
-You can also override any setting with command-line arguments.
+You can define multiple connection profiles (e.g., `default`, `production`, `staging`) and select one using the `--profile` option.
 
 ## Usage
 
 ```
-qdrant-manager <command> [options]
+solr-manager <command> [options]
 ```
 
-### Available Commands:
+### Available Commands (Planned/Initial):
 
-- `create`: Create a new collection
-- `delete`: Delete an existing collection
-- `list`: List all collections
-- `info`: Get detailed information about a collection
-- `batch`: Perform batch operations on documents
-- `get`: Retrieve points from a collection
+- `create`: Create a new Solr collection (may require pre-defined config set)
+- `delete`: Delete an existing Solr collection
+- `list`: List all Solr collections
+- `info`: Get detailed information about a collection (e.g., schema, status)
+- `batch`: Perform batch operations on documents (add, update, delete)
+- `get`: Retrieve documents from a collection using Solr queries
 - `config`: View available configuration profiles
 
 ### Connection Options:
 
 ```
 --profile PROFILE  Configuration profile to use
---url URL          Qdrant server URL
---port PORT        Qdrant server port
---api-key API_KEY  Qdrant API key
---collection NAME  Collection name
+--solr-url URL     Solr base URL (e.g., http://host:port/solr)
+# --port PORT        (Port is usually part of solr-url)
+# --api-key API_KEY  (Authentication might use username/password or other methods)
+--collection NAME  Solr collection name
+# --zk-hosts HOSTS   ZooKeeper hosts string (alternative connection method)
+# --username USER    Solr username (if basic auth is used)
+# --password PASS    Solr password (if basic auth is used)
 ```
 
 ### Examples:
 
 ```bash
-# List all collections
-qdrant-manager list
+# List all Solr collections
+solr-manager list
 
-# Create a new collection with custom settings
-qdrant-manager create --collection my-collection --size 1536 --distance euclid
+# Create a new collection (details TBD, might need config set name)
+# solr-manager create --collection my-new-collection --configset _default 
 
 # Get info about a collection
-qdrant-manager info --collection my-collection
+solr-manager info --collection my_solr_collection
 
-# Retrieve points by ID
-qdrant-manager get --ids "1,2,3" --with-vectors
+# Retrieve documents matching a query
+solr-manager get --query 'category:product AND inStock:true' --fields 'id,name,price'
 
-# Retrieve points using a filter and save as CSV
-qdrant-manager get --filter '{"key":"category","match":{"value":"product"}}' \
-  --format csv --output results.csv
+# Retrieve documents by ID and save as CSV
+solr-manager get --query 'id:(doc1 OR doc2 OR doc3)' --format csv --output results.csv
 
-# Add a field to documents matching a filter
-qdrant-manager batch --filter '{"key":"category","match":{"value":"product"}}' \
-  --add --doc '{"processed": true}'
+# Add/update a field in documents matching a query
+solr-manager batch --query 'category:product' --update '{"processed_b": true}'
 
-# Delete a field from specific documents
-qdrant-manager batch --ids "doc1,doc2,doc3" --delete --selector "metadata.temp_data"
+# Delete documents matching a query
+solr-manager batch --delete-query 'status:obsolete'
 
-# Replace fields in documents from an ID file
-qdrant-manager batch --id-file my_ids.txt --replace --selector "metadata.source" \
-  --doc '{"provider": "new-provider", "date": "2025-03-31"}'
+# Delete documents by ID from an ID file
+solr-manager batch --id-file my_ids.txt --delete-ids
 
 # Switch between profiles
-qdrant-manager --profile production list
+solr-manager --profile production list
 ```
 
-## Changelog
+## Changelog 
+# (Keep existing changelog for now, maybe add a note about the Solr pivot)
 
-### v0.1.6
-- Improved pagination for large result sets to prevent timeouts
-- Fixed empty filter handling to correctly match all documents
-- Added retry logic for failed batch retrievals
-- Better cloud connection detection and handling
-- Improved logging with detailed progress updates
-- Changed invalid filter structure message from error to warning
+### v0.2.0 (In Progress - Solr Refactor)
+- Refactoring core logic to use SolrCloud instead of Qdrant.
+- Updating configuration structure for Solr.
+- Renaming tool to `solr-manager`.
 
-### v0.1.5
-- Fixed packaging issue to include command modules
-
-### v0.1.4
-- Added `get` command to retrieve and export points from collections
-- Refactored CLI code into separate modules for better maintainability
-- Improved test coverage to over 85%
-- Fixed various bugs in tests and command handling
-
-### v0.1.3
-- Fixed bug in collection creation with payload indices
-
-### v0.1.2
-- Added comprehensive test coverage
-- Improved error handling
-
-### v0.1.1
-- Initial release with basic functionality
-- Added configuration profiles support
+### v0.1.6 
+# ... existing changelog entries ...
 
 ## License
 

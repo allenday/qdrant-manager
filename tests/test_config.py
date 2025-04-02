@@ -1,590 +1,309 @@
-"""
-Tests for the configuration management module.
-"""
 import pytest
-import tempfile
-import yaml
 import os
+import yaml
 from pathlib import Path
-from unittest.mock import patch
-import json
+from unittest.mock import patch, MagicMock, mock_open
+import platform
+import appdirs
+import builtins
 
-from qdrant_manager.config import (
-    get_config_dir, 
-    get_config_file, 
-    ensure_config_dir, 
-    create_default_config, 
-    _convert_config, 
-    load_config, 
-    get_profiles, 
-    update_config,
-    CONFIG_FILENAME,
+# Import functions under test
+from solr_manager.config import (
+    get_config_dir,
+    get_profiles,
+    load_config,
     DEFAULT_PROFILE,
-    load_configuration
+    CONFIG_FILENAME,
+    get_config_file
 )
 
-def test_config_dir():
-    """Test that config directory is a Path object."""
+# === Test get_config_dir ===
+
+@patch('appdirs.user_config_dir', return_value="/mock/appdir/path")
+def test_get_config_dir_uses_appdirs(mock_user_config_dir):
+    """Test get_config_dir calls appdirs.user_config_dir."""
+    expected_path = Path("/mock/appdir/path")
     config_dir = get_config_dir()
-    assert isinstance(config_dir, Path)
-    
-def test_config_filename():
-    """Test that config filename is defined."""
-    assert isinstance(CONFIG_FILENAME, str)
-    assert CONFIG_FILENAME.endswith('.yaml')
+    assert config_dir == expected_path
+    mock_user_config_dir.assert_called_once_with("solr-manager")
 
-def test_get_config_file():
-    """Test getting config file path."""
-    config_file = get_config_file()
-    assert isinstance(config_file, Path)
-    assert config_file.name == CONFIG_FILENAME
-    assert config_file.parent == get_config_dir()
+# === Test get_profiles ===
 
-def test_ensure_config_dir():
-    """Test ensuring config directory exists."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a temporary config path
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        
-        # Make sure it doesn't exist yet
-        assert not temp_path.exists()
-        
-        # Patch get_config_dir to return our temp path
-        with patch('qdrant_manager.config.get_config_dir', return_value=temp_path):
-            # Call function to ensure directory
-            result = ensure_config_dir()
-            
-            # Check results
-            assert result == temp_path
-            assert temp_path.exists()
-            assert temp_path.is_dir()
+@patch('solr_manager.config.get_config_file', return_value=Path("/fake/config.yaml"))
+@patch('pathlib.Path.exists', return_value=True)
+@patch('builtins.open', new_callable=mock_open, read_data='default:\n  conn: {}\nprod:\n  conn: {}')
+@patch('yaml.safe_load', return_value={'default': {'conn': {}}, 'prod': {'conn': {}}})
+def test_get_profiles_success(mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test get_profiles successfully reads profile names from config."""
+    profiles = get_profiles()
+    mock_get_file.assert_called_once()
+    mock_exists.assert_called_once()
+    mock_open_file.assert_called_once_with(Path("/fake/config.yaml"), 'r')
+    mock_safe_load.assert_called_once()
+    assert profiles == ["default", "prod"]
 
-def test_create_default_config():
-    """Test creating default configuration file."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a temporary config path
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        
-        # Patch functions to use temp directory
-        with patch('qdrant_manager.config.get_config_dir', return_value=temp_path):
-            with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-                # Create default config
-                result = create_default_config()
-                
-                # Check results
-                assert result == temp_file
-                assert temp_file.exists()
-                
-                # Verify file content
-                with open(temp_file, 'r') as f:
-                    config = yaml.safe_load(f)
-                    
-                    # Check if default profile exists
-                    assert DEFAULT_PROFILE in config
-                    
-                    # Check if connection section exists
-                    assert "connection" in config[DEFAULT_PROFILE]
-                    assert "url" in config[DEFAULT_PROFILE]["connection"]
-                    
-                    # Check if vectors section exists
-                    assert "vectors" in config[DEFAULT_PROFILE]
-                    assert "size" in config[DEFAULT_PROFILE]["vectors"]
-                    
-                    # Check if production profile exists
-                    assert "production" in config
+@patch('solr_manager.config.get_config_file', return_value=Path("/fake/config.yaml"))
+@patch('pathlib.Path.exists', return_value=False)
+def test_get_profiles_file_not_found(mock_exists, mock_get_file):
+    """Test get_profiles returns default when config file doesn't exist."""
+    profiles = get_profiles()
+    mock_get_file.assert_called_once()
+    mock_exists.assert_called_once()
+    assert profiles == [DEFAULT_PROFILE]
 
-def test_convert_config():
-    """Test configuration conversion function."""
-    # Test with empty config
-    assert _convert_config(None) == {}
-    assert _convert_config({}) == {}
-    
-    # Test with minimal config
-    minimal_config = {
-        "connection": {
-            "url": "test-url",
-            "port": 1234
-        }
+@patch('solr_manager.config.get_config_file', return_value=Path("/fake/config.yaml"))
+@patch('pathlib.Path.exists', return_value=True)
+@patch('builtins.open', new_callable=mock_open, read_data='invalid yaml:')
+@patch('yaml.safe_load', side_effect=yaml.YAMLError("Bad YAML"))
+@patch('solr_manager.config.logger')
+def test_get_profiles_yaml_error(mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test get_profiles handles YAML errors and returns default."""
+    profiles = get_profiles()
+    mock_get_file.assert_called_once()
+    mock_exists.assert_called_once()
+    mock_open_file.assert_called_once_with(Path("/fake/config.yaml"), 'r')
+    mock_safe_load.assert_called_once()
+    assert profiles == [DEFAULT_PROFILE]
+    mock_logger.warning.assert_called_once()
+
+@patch('solr_manager.config.get_config_file', return_value=Path("/fake/config.yaml"))
+@patch('pathlib.Path.exists', return_value=True)
+@patch('builtins.open', new_callable=mock_open, read_data='not_a_dict')
+@patch('yaml.safe_load', return_value="not_a_dict")
+@patch('solr_manager.config.logger')
+def test_get_profiles_not_a_dict(mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test get_profiles handles config file not being a dictionary."""
+    profiles = get_profiles()
+    mock_get_file.assert_called_once()
+    mock_exists.assert_called_once()
+    mock_open_file.assert_called_once_with(Path("/fake/config.yaml"), 'r')
+    mock_safe_load.assert_called_once()
+    assert profiles == [DEFAULT_PROFILE]
+    mock_logger.warning.assert_called_once()
+
+# === Test load_config ===
+
+# Mock the dependencies of load_config for all tests in this section
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config') # Also mock this as load_config calls it
+def test_load_config_default_profile(mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test loading the default profile."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+    mock_exists.return_value = True
+    mock_profiles = {
+        "default": {"connection": {"solr_url": "http://default"}, "other": "setting"},
+        "prod": {"connection": {"zk_hosts": "zk1"}}
     }
-    converted = _convert_config(minimal_config)
-    assert converted["url"] == "test-url"
-    assert converted["port"] == 1234
-    
-    # Test with full config
-    full_config = {
-        "connection": {
-            "url": "full-url",
-            "port": 5678,
-            "api_key": "test-key",
-            "collection": "test-collection"
-        },
-        "vectors": {
-            "size": 512,
-            "distance": "euclid",
-            "indexing_threshold": 100
-        },
-        "payload_indices": [
-            {"field": "test_field", "type": "keyword"}
-        ]
+    mock_safe_load.return_value = mock_profiles
+
+    config = load_config(profile=None) # Use profile=None
+
+    mock_get_file.assert_called_once()
+    mock_exists.assert_called_once()
+    mock_open_file.assert_called_once_with(mock_config_path, 'r')
+    mock_safe_load.assert_called_once()
+    assert config == {"solr_url": "http://default"} # Only connection dict is returned
+    mock_logger.error.assert_not_called()
+    mock_create_default.assert_not_called()
+
+
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config')
+def test_load_config_specific_profile(mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test loading a specific named profile."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+    mock_exists.return_value = True
+    mock_profiles = {
+        "default": {"connection": {"solr_url": "http://default"}},
+        "prod": {"connection": {"zk_hosts": "zk1", "timeout": 60}}
     }
-    converted = _convert_config(full_config)
-    assert converted["url"] == "full-url"
-    assert converted["port"] == 5678
-    assert converted["api_key"] == "test-key"
-    assert converted["collection"] == "test-collection"
-    assert converted["vector_size"] == 512
-    assert converted["distance"] == "euclid"
-    assert converted["indexing_threshold"] == 100
-    assert len(converted["payload_indices"]) == 1
-    assert converted["payload_indices"][0]["field"] == "test_field"
+    mock_safe_load.return_value = mock_profiles
 
-def test_get_profiles():
-    """Test getting available profiles."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a temporary config file
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        temp_path.mkdir(exist_ok=True)
-        
-        # Create a test config file
-        test_config = {
-            "profile1": {},
-            "profile2": {}
-        }
-        with open(temp_file, 'w') as f:
-            yaml.dump(test_config, f)
-        
-        # Patch get_config_file to return our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            profiles = get_profiles()
-            assert len(profiles) == 2
-            assert "profile1" in profiles
-            assert "profile2" in profiles
+    config = load_config(profile="prod") # Use profile="prod"
 
-def test_get_profiles_no_file():
-    """Test getting profiles when config file doesn't exist."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a temp path for a file that doesn't exist
-        temp_path = Path(tmp_dir) / "nonexistent_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        
-        # Patch get_config_file to return our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            profiles = get_profiles()
-            assert len(profiles) == 1
-            assert profiles[0] == DEFAULT_PROFILE
+    mock_get_file.assert_called_once()
+    mock_exists.assert_called_once()
+    mock_open_file.assert_called_once_with(mock_config_path, 'r')
+    mock_safe_load.assert_called_once()
+    assert config == {"zk_hosts": "zk1", "timeout": 60}
+    mock_logger.error.assert_not_called()
+    mock_create_default.assert_not_called()
 
-def test_get_profiles_with_yaml_error():
-    """Test getting profiles with a YAML parsing error."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a temp directory and file
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        temp_path.mkdir(exist_ok=True)
-        
-        # Create an invalid YAML file
-        with open(temp_file, 'w') as f:
-            f.write("this is not valid yaml: [\n")
-        
-        # Patch get_config_file to return our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            # Function should handle the error and return default profile
-            profiles = get_profiles()
-            assert len(profiles) == 1
-            assert profiles[0] == DEFAULT_PROFILE
+# No test for merging needed, load_config just returns the specific profile's connection section
 
-def test_update_config():
-    """Test updating configuration values."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Set up temp directory
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        temp_path.mkdir(exist_ok=True)
-        
-        # Create a test config file
-        test_config = {
-            "default": {
-                "connection": {
-                    "url": "original-url"
-                }
-            }
-        }
-        with open(temp_file, 'w') as f:
-            yaml.dump(test_config, f)
-        
-        # Patch functions to use our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            with patch('qdrant_manager.config.create_default_config', return_value=temp_file):
-                # Update existing value
-                update_config("default", "connection", "url", "updated-url")
-                
-                # Read the updated config
-                with open(temp_file, 'r') as f:
-                    updated_config = yaml.safe_load(f)
-                
-                assert updated_config["default"]["connection"]["url"] == "updated-url"
-                
-                # Update with new profile
-                update_config("new_profile", "connection", "url", "new-profile-url")
-                
-                # Read the updated config
-                with open(temp_file, 'r') as f:
-                    updated_config = yaml.safe_load(f)
-                
-                assert "new_profile" in updated_config
-                assert updated_config["new_profile"]["connection"]["url"] == "new-profile-url"
-                
-                # Update with new section
-                update_config("default", "new_section", "new_key", "new_value")
-                
-                # Read the updated config
-                with open(temp_file, 'r') as f:
-                    updated_config = yaml.safe_load(f)
-                
-                assert "new_section" in updated_config["default"]
-                assert updated_config["default"]["new_section"]["new_key"] == "new_value"
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load', return_value={}) # Empty config file
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config')
+def test_load_config_empty_file(mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test load_config when config file is empty."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+    mock_exists.return_value = True
 
-def test_update_config_yaml_error():
-    """Test handling of YAML errors in config file when updating."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Set up temp directory
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        temp_path.mkdir(exist_ok=True)
-        
-        # Create an invalid YAML file
-        with open(temp_file, 'w') as f:
-            f.write("this is not valid yaml: [\n")
-        
-        # Patch functions to use our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            # Updating should call sys.exit due to YAML error
-            with patch('sys.exit') as mock_exit:
-                try:
-                    update_config("default", "connection", "url", "updated-url")
-                except:
-                    # Exception expected, don't fail test
-                    pass
-                
-                # Verify sys.exit would be called
-                mock_exit.assert_called()
+    config = load_config(profile=None)
 
-def test_update_config_no_file():
-    """Test updating configuration when file doesn't exist."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Set up temp directory for a file that doesn't exist
-        temp_path = Path(tmp_dir) / "nonexistent_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        
-        # Ensure the file doesn't exist
-        assert not temp_file.exists()
-        
-        # Patch functions to use our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            # When file doesn't exist, create_default_config should be called
-            with patch('qdrant_manager.config.create_default_config', return_value=temp_file) as mock_create:
-                # Mock the file open operations so we don't need to actually create files
-                with patch('builtins.open') as mock_open, \
-                     patch('yaml.safe_load') as mock_safe_load, \
-                     patch('yaml.dump') as mock_dump:
-                    
-                    # Set up mock to return dummy config from safe_load
-                    mock_safe_load.return_value = {"default": {"connection": {}}}
-                    
-                    # Call the function
-                    update_config("default", "connection", "url", "test-url")
-                    
-                    # Verify create_default_config was called
-                    mock_create.assert_called_once()
-                    
-                    # Verify yaml.dump was called to write the config
-                    assert mock_dump.called
+    assert config is None
+    mock_logger.error.assert_any_call(f"Configuration file {mock_config_path} is empty or invalid.")
+    mock_create_default.assert_not_called()
 
-def test_load_config_new_file_exit():
-    """Test load_config creating new file and exiting."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Set up temp directory for non-existent file
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        
-        # Ensure file doesn't exist yet
-        assert not temp_file.exists()
-        
-        # Patch functions to use our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            # Should call create_default_config then exit
-            with patch('qdrant_manager.config.create_default_config', return_value=temp_file) as mock_create:
-                with patch('sys.exit') as mock_exit:
-                    try:
-                        load_config()
-                    except:
-                        # Exception expected, don't fail test
-                        pass
-                    
-                    # Verify create_default_config was called
-                    mock_create.assert_called_once()
-                    
-                    # Verify sys.exit was called with 1
-                    mock_exit.assert_called_with(1)
 
-def test_load_config_with_existing_profile():
-    """Test loading config with an existing profile."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Set up temp directory
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        temp_path.mkdir(exist_ok=True)
-        
-        # Create a test config file
-        test_config = {
-            "default": {
-                "connection": {
-                    "url": "default-url",
-                    "port": 6333,
-                    "api_key": "default-key",
-                    "collection": "default-collection"
-                },
-                "vectors": {
-                    "size": 256,
-                    "distance": "cosine",
-                    "indexing_threshold": 0
-                }
-            },
-            "test_profile": {
-                "connection": {
-                    "url": "test-url",
-                    "port": 7000,
-                    "api_key": "test-key",
-                    "collection": "test-collection"
-                },
-                "vectors": {
-                    "size": 512,
-                    "distance": "euclid",
-                    "indexing_threshold": 100
-                },
-                "payload_indices": [
-                    {"field": "test_field", "type": "keyword"}
-                ]
-            }
-        }
-        with open(temp_file, 'w') as f:
-            yaml.dump(test_config, f)
-        
-        # Patch functions to use our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            with patch('qdrant_manager.config.create_default_config', return_value=temp_file):
-                # Mock sys.exit to prevent exit
-                with patch('sys.exit'):
-                    # Test loading with default profile
-                    config = load_config()
-                    assert config["url"] == "default-url"
-                    assert config["port"] == 6333
-                    assert config["vector_size"] == 256
-                    assert config["distance"] == "cosine"
-                    
-                    # Test loading with specified profile
-                    config = load_config("test_profile")
-                    assert config["url"] == "test-url"
-                    assert config["port"] == 7000
-                    assert config["vector_size"] == 512
-                    assert config["distance"] == "euclid"
-                    assert len(config["payload_indices"]) == 1
-                    assert config["payload_indices"][0]["field"] == "test_field"
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load', side_effect=yaml.YAMLError("Bad YAML"))
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config')
+def test_load_config_yaml_error(mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test load_config handling YAML parse errors."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+    mock_exists.return_value = True
 
-def test_load_config_nonexistent_profile():
-    """Test loading config with a profile that doesn't exist."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Set up temp directory
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        temp_path.mkdir(exist_ok=True)
-        
-        # Create a test config file with only default profile
-        test_config = {
-            "default": {
-                "connection": {
-                    "url": "default-url",
-                    "port": 6333
-                }
-            }
-        }
-        with open(temp_file, 'w') as f:
-            yaml.dump(test_config, f)
-        
-        # Patch functions to use our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            # Try to load a non-existent profile, should call sys.exit
-            with patch('sys.exit') as mock_exit:
-                try:
-                    load_config("nonexistent_profile")
-                except:
-                    # We expect an exception here, don't let it fail the test
-                    pass
-                # Verify sys.exit would be called
-                mock_exit.assert_called()
+    config = load_config(profile=None)
 
-def test_load_config_yaml_error():
-    """Test handling of YAML errors in config file."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Set up temp directory
-        temp_path = Path(tmp_dir) / "test_config_dir"
-        temp_file = temp_path / CONFIG_FILENAME
-        temp_path.mkdir(exist_ok=True)
-        
-        # Create an invalid YAML file
-        with open(temp_file, 'w') as f:
-            f.write("this is not valid yaml: [\n")
-        
-        # Patch functions to use our temp file
-        with patch('qdrant_manager.config.get_config_file', return_value=temp_file):
-            # Loading should call sys.exit due to YAML error
-            with patch('sys.exit') as mock_exit:
-                try:
-                    load_config()
-                except:
-                    # We expect an exception here, don't let it fail the test
-                    pass
-                # Verify sys.exit would be called
-                mock_exit.assert_called()
+    assert config is None
+    mock_logger.error.assert_any_call(f"Error parsing configuration file {mock_config_path}: Bad YAML")
+    mock_create_default.assert_not_called()
 
-def test_load_configuration_default():
-    """Test loading configuration with default settings."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a temporary JSON config file
-        config_path = os.path.join(tmp_dir, "config.json")
-        test_config = {
-            "url": "test-url",
-            "port": 6333,
-            "api_key": "test-key"
-        }
-        
-        with open(config_path, "w") as f:
-            json.dump(test_config, f)
-        
-        # Test loading the config file
-        config = load_configuration(config_path)
-        
-        # Verify the config was loaded correctly
-        assert config["url"] == "test-url"
-        assert config["port"] == 6333
-        assert config["api_key"] == "test-key"
 
-def test_load_configuration_with_profile():
-    """Test loading configuration with a specific profile."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a temporary JSON config file with profiles
-        config_path = os.path.join(tmp_dir, "config.json")
-        test_config = {
-            "profiles": {
-                "dev": {
-                    "url": "dev-url",
-                    "port": 6333
-                },
-                "prod": {
-                    "url": "prod-url",
-                    "port": 6334
-                }
-            }
-        }
-        
-        with open(config_path, "w") as f:
-            json.dump(test_config, f)
-        
-        # Test loading a specific profile
-        config = load_configuration(config_path, profile="prod")
-        
-        # Verify the correct profile was loaded
-        assert config["url"] == "prod-url"
-        assert config["port"] == 6334
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists', return_value=True) # Config exists
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config')
+def test_load_config_default_profile_missing(mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test load_config when default profile is requested but missing."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+    mock_profiles = {"prod": {}} # No default profile
+    mock_safe_load.return_value = mock_profiles
 
-def test_load_configuration_file_not_found():
-    """Test handling when configuration file is not found."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Use a path to a file that doesn't exist
-        config_path = os.path.join(tmp_dir, "nonexistent.json")
-        
-        # Test loading the nonexistent file
-        with patch('qdrant_manager.config.logger') as mock_logger:
-            config = load_configuration(config_path)
-            
-            # Verify warning was logged and empty dict was returned
-            mock_logger.warning.assert_called()
-            assert config == {}
+    config = load_config(profile=None) # Request default
 
-def test_load_configuration_json_error():
-    """Test handling JSON parsing errors in configuration file."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create an invalid JSON file
-        config_path = os.path.join(tmp_dir, "invalid.json")
-        
-        with open(config_path, "w") as f:
-            f.write("{ invalid json")
-        
-        # Test loading the invalid file
-        with patch('qdrant_manager.config.logger') as mock_logger:
-            config = load_configuration(config_path)
-            
-            # Verify error was logged and empty dict was returned
-            mock_logger.error.assert_called()
-            assert config == {}
+    assert config is None
+    mock_logger.error.assert_any_call(f"Profile '{DEFAULT_PROFILE}' not found in {mock_config_path}.")
+    mock_create_default.assert_not_called()
 
-def test_load_configuration_other_error():
-    """Test handling other errors when loading configuration file."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a temp file that will cause a different error (e.g., permission error)
-        config_path = os.path.join(tmp_dir, "error.json")
-        
-        # Mock open to raise an exception
-        with patch('builtins.open', side_effect=Exception("Test error")):
-            with patch('qdrant_manager.config.logger') as mock_logger:
-                config = load_configuration(config_path)
-                
-                # Verify error was logged (we don't know which logger method might be called)
-                # So check that we got an empty dict and that at least one logger method was called
-                assert config == {}
-                assert mock_logger.method_calls, "Expected at least one logger method to be called"
 
-def test_load_configuration_profile_not_found():
-    """Test handling when profile is not found in configuration."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a config file with profiles
-        config_path = os.path.join(tmp_dir, "config.json")
-        test_config = {
-            "profiles": {
-                "dev": {
-                    "url": "dev-url"
-                }
-            }
-        }
-        
-        with open(config_path, "w") as f:
-            json.dump(test_config, f)
-        
-        # Test loading a nonexistent profile
-        with patch('qdrant_manager.config.logger') as mock_logger:
-            config = load_configuration(config_path, profile="nonexistent")
-            
-            # Verify warning was logged and empty dict was returned
-            mock_logger.warning.assert_called()
-            assert config == {}
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists', return_value=True) # Config exists
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config')
+def test_load_config_specific_profile_missing(mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test load_config when a specific profile is requested but missing."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+    mock_profiles = {"default": {}}
+    mock_safe_load.return_value = mock_profiles
+    profile_to_load = "staging"
 
-def test_load_configuration_no_profiles_section():
-    """Test handling when profiles section is missing in configuration."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create a config file without profiles section
-        config_path = os.path.join(tmp_dir, "config.json")
-        test_config = {
-            "url": "test-url"
-        }
-        
-        with open(config_path, "w") as f:
-            json.dump(test_config, f)
-        
-        # Test loading with a profile when profiles section doesn't exist
-        with patch('qdrant_manager.config.logger') as mock_logger:
-            config = load_configuration(config_path, profile="any")
-            
-            # Verify warning was logged and empty dict was returned
-            mock_logger.warning.assert_called()
-            assert config == {}
+    config = load_config(profile=profile_to_load)
+
+    assert config is None
+    mock_logger.error.assert_any_call(f"Profile '{profile_to_load}' not found in {mock_config_path}.")
+    mock_create_default.assert_not_called()
+
+
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists', return_value=True) # Config exists
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config')
+def test_load_config_profile_not_dict(mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test load_config when a profile's data is not a dictionary."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+    mock_profiles = {"default": "not_a_dict"}
+    mock_safe_load.return_value = mock_profiles
+
+    config = load_config(profile=None) # Request default
+
+    assert config is None
+    mock_logger.error.assert_any_call(f"Profile '{DEFAULT_PROFILE}' in {mock_config_path} is not a valid dictionary.")
+    mock_create_default.assert_not_called()
+
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists', return_value=True) # Config exists
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config')
+def test_load_config_connection_section_missing(mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test load_config when a profile is missing the 'connection' section."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+    mock_profiles = {"default": {"other_stuff": 123}} # No connection section
+    mock_safe_load.return_value = mock_profiles
+
+    config = load_config(profile=None) # Request default
+
+    assert config is None
+    mock_logger.error.assert_any_call(f"Profile '{DEFAULT_PROFILE}' in {mock_config_path} is missing the 'connection' section or it's invalid.")
+    mock_create_default.assert_not_called()
+
+
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists', return_value=False) # Config does NOT exist
+@patch('builtins.open', new_callable=mock_open) # Need to mock open even if create_default is mocked for initial file check
+@patch('yaml.safe_load') # Need to mock yaml even if create_default is mocked for initial file check
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config', return_value=Path("/new/config.yaml")) # Creation succeeds
+@patch('sys.exit') # Mock sys.exit
+@patch('builtins.print') # Mock print
+def test_load_config_creates_default_and_exits(mock_print, mock_exit, mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test load_config calls create_default_config and exits if file is missing."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+
+    load_config(profile=None)
+
+    mock_get_file.assert_called_once()
+    mock_exists.assert_called_once()
+    mock_create_default.assert_called_once()
+    mock_print.assert_any_call("Default configuration file created. Please edit it and run the command again.")
+    mock_exit.assert_called_once_with(1)
+    # Don't check open/safe_load as it exits before trying to load
+
+
+@patch('solr_manager.config.get_config_file')
+@patch('pathlib.Path.exists', return_value=False) # Config does NOT exist
+@patch('builtins.open', new_callable=mock_open) # Mock open
+@patch('yaml.safe_load') # Mock yaml
+@patch('solr_manager.config.logger')
+@patch('solr_manager.config.create_default_config', return_value=None) # Creation fails
+@patch('sys.exit') # Mock sys.exit
+@patch('builtins.print') # Mock print
+def test_load_config_create_default_fails_and_exits(mock_print, mock_exit, mock_create_default, mock_logger, mock_safe_load, mock_open_file, mock_exists, mock_get_file):
+    """Test load_config handles failure of create_default_config and exits."""
+    mock_config_path = Path("/fake/dir/config.yaml")
+    mock_get_file.return_value = mock_config_path
+
+    load_config(profile=None)
+
+    mock_get_file.assert_called_once()
+    mock_exists.assert_called_once()
+    mock_create_default.assert_called_once()
+    mock_print.assert_any_call("Failed to create a default configuration file.")
+    mock_exit.assert_called_once_with(1)
+    # Don't check open/safe_load as it exits before trying to load
+
+
+# Remove old test_load_config_no_profiles_loaded - load_config now exits if file doesn't exist
+# Remove old test_load_config_merging_with_default - load_config doesn't merge

@@ -1,0 +1,6 @@
+# Development/Testing Dependencies
+pytest
+pytest-mock
+kazoo # Needed for mocking ZK interactions in tests
+# click # Needed for CliRunner in tests - REMOVED
+# Add other dev dependencies here, like linters or formatters 
