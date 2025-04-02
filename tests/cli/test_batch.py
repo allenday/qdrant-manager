@@ -168,7 +168,7 @@ def test_parse_filter_invalid_structure():
     with patch('qdrant_manager.commands.batch.logger') as mock_logger:
         q_filter = _parse_filter(args)
         assert q_filter is None
-        mock_logger.error.assert_called_with("Invalid filter structure. Must contain 'key' and 'match'.")
+        mock_logger.warning.assert_called_with("Invalid filter structure. Must contain 'key' and 'match'. Proceeding without filter.")
 
 def test_parse_filter_none():
     """Test parsing filter when arg is None."""

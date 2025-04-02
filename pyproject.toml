@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qdrant-manager"
-version = "0.1.5"
+version = "0.1.6"
 description = "Command-line tool for managing Qdrant vector database collections"
 readme = "README.md"
 authors = [

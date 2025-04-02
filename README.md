@@ -6,6 +6,7 @@ A general-purpose command-line tool for managing Qdrant vector database collecti
 
 - Create, delete, and list collections
 - Get detailed information about collections
+- Retrieve points from collections with flexible query options
 - Batch operations on documents:
   - Add fields to documents
   - Delete fields from documents
@@ -102,6 +103,7 @@ qdrant-manager <command> [options]
 - `list`: List all collections
 - `info`: Get detailed information about a collection
 - `batch`: Perform batch operations on documents
+- `get`: Retrieve points from a collection
 - `config`: View available configuration profiles
 
 ### Connection Options:
@@ -126,6 +128,13 @@ qdrant-manager create --collection my-collection --size 1536 --distance euclid
 # Get info about a collection
 qdrant-manager info --collection my-collection
 
+# Retrieve points by ID
+qdrant-manager get --ids "1,2,3" --with-vectors
+
+# Retrieve points using a filter and save as CSV
+qdrant-manager get --filter '{"key":"category","match":{"value":"product"}}' \
+  --format csv --output results.csv
+
 # Add a field to documents matching a filter
 qdrant-manager batch --filter '{"key":"category","match":{"value":"product"}}' \
   --add --doc '{"processed": true}'
@@ -142,6 +151,23 @@ qdrant-manager --profile production list
 ```
 
 ## Changelog
+
+### v0.1.6
+- Improved pagination for large result sets to prevent timeouts
+- Fixed empty filter handling to correctly match all documents
+- Added retry logic for failed batch retrievals
+- Better cloud connection detection and handling
+- Improved logging with detailed progress updates
+- Changed invalid filter structure message from error to warning
+
+### v0.1.5
+- Fixed packaging issue to include command modules
+
+### v0.1.4
+- Added `get` command to retrieve and export points from collections
+- Refactored CLI code into separate modules for better maintainability
+- Improved test coverage to over 85%
+- Fixed various bugs in tests and command handling
 
 ### v0.1.3
 - Fixed bug in collection creation with payload indices

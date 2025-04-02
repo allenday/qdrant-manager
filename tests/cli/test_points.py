@@ -222,7 +222,7 @@ def test_parse_filter_for_get():
     with patch('qdrant_manager.commands.get.logger') as mock_logger:
         filter_obj = _parse_filter_for_get(mock_args_invalid)
         assert filter_obj is None
-        mock_logger.error.assert_called_with("Invalid filter structure. Must contain 'key' and 'match'.")
+        mock_logger.warning.assert_called_with("Invalid filter structure. Must contain 'key' and 'match'. Proceeding without filter.")
     
     # Test invalid JSON
     mock_args_bad_json = MagicMock()

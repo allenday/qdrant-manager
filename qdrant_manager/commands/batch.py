@@ -42,7 +42,7 @@ def _parse_filter(args):
                      logger.error("Could not parse filter structure.")
                      return None
             else:
-                logger.error("Invalid filter structure. Must contain 'key' and 'match'.")
+                logger.warning("Invalid filter structure. Must contain 'key' and 'match'. Proceeding without filter.")
                 return None
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in filter: {args.filter}")
