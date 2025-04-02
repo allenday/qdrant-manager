@@ -2,6 +2,7 @@ import logging
 import json
 import csv
 import sys
+import time
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct, Filter, FieldCondition, MatchValue
 
@@ -21,26 +22,34 @@ def _parse_ids_for_get(args):
     return None # Return None if neither is provided, indicates fetch all/use filter
 
 def _parse_filter_for_get(args):
-    # Reusing filter parsing logic from batch
+    """Parse filter string from command arguments."""
     if args.filter:
         try:
             filter_dict = json.loads(args.filter)
+            
+            # Handle empty filter case - return None to match everything
+            if not filter_dict:
+                logger.info("Empty filter provided, will match all documents")
+                return None
+                
+            # Continue with normal filter parsing
             if 'key' in filter_dict and 'match' in filter_dict:
-                 must_conditions = []
-                 if 'value' in filter_dict['match']:
-                     must_conditions.append(
-                         FieldCondition(
-                             key=filter_dict['key'],
-                             match=MatchValue(value=filter_dict['match']['value'])
-                         )
-                     )
-                 if must_conditions:
-                    return Filter(must=must_conditions)
-                 else:
-                     logger.error("Could not parse filter structure.")
-                     return None
+                must_conditions = []
+                # Check different match value formats
+                if 'value' in filter_dict['match']:
+                    must_conditions.append(
+                        FieldCondition(
+                            key=filter_dict['key'],
+                            match=MatchValue(value=filter_dict['match']['value'])
+                        )
+                    )
+                if must_conditions:
+                   return Filter(must=must_conditions)
+                else:
+                    logger.error("Could not parse filter structure.")
+                    return None
             else:
-                logger.error("Invalid filter structure. Must contain 'key' and 'match'.")
+                logger.warning("Invalid filter structure. Must contain 'key' and 'match'. Proceeding without filter.")
                 return None
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in filter: {args.filter}")
@@ -77,18 +86,57 @@ def get_points(client: QdrantClient, collection_name: str, args):
                 with_vectors=with_vectors
             )
         else:
-            # Use scroll for filters or getting all points
-            points_data, next_offset = client.scroll(
-                collection_name=collection_name,
-                scroll_filter=qdrant_filter, # Optional filter
-                limit=limit,
-                with_payload=with_payload,
-                with_vectors=with_vectors,
-                # offset=None # Start from the beginning
-            )
-            # TODO: Implement pagination if needed (check next_offset)
-            if next_offset:
-                 logger.warning(f"Only retrieved the first {limit} points. More points exist.")
+            # Use scroll with pagination for filters or getting all points
+            points_data = []
+            # Use a small batch size to avoid timeouts
+            batch_size = 1000  # Smaller batch size to prevent server rejection
+            offset = None
+            remaining = limit
+            page_num = 1
+            max_retries = 3
+            
+            while remaining > 0:
+                current_batch_size = min(batch_size, remaining)
+                logger.info(f"Fetching page {page_num} (up to {current_batch_size} points)...")
+                
+                # Implement retry logic
+                retries = 0
+                while retries < max_retries:
+                    try:
+                        batch_points, offset = client.scroll(
+                            collection_name=collection_name,
+                            scroll_filter=qdrant_filter,
+                            limit=current_batch_size,
+                            with_payload=with_payload,
+                            with_vectors=with_vectors,
+                            offset=offset  # Use the offset from previous call
+                        )
+                        break  # Success, break out of retry loop
+                    except Exception as e:
+                        retries += 1
+                        if retries >= max_retries:
+                            raise  # Re-raise if max retries reached
+                        logger.warning(f"Batch retrieval error (attempt {retries}/{max_retries}): {e}")
+                        time.sleep(1)  # Short delay before retry
+                
+                # Process the retrieved batch
+                if not batch_points:
+                    logger.info(f"No more points to retrieve after {len(points_data)} total points")
+                    break
+                    
+                points_data.extend(batch_points)
+                logger.info(f"Retrieved {len(batch_points)} points in this batch, {len(points_data)} total so far")
+                
+                page_num += 1
+                remaining -= len(batch_points)
+                
+                # Break if we've retrieved all available points
+                if not offset or len(batch_points) < current_batch_size:
+                    logger.info(f"Retrieved all available points ({len(points_data)} total)")
+                    break
+            
+            if offset and remaining <= 0:
+                logger.warning(f"Reached limit of {limit} points. More points may exist.")
 
         if not points_data:
             logger.info("No points found matching the criteria.")

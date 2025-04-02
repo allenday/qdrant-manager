@@ -46,11 +46,28 @@ def initialize_qdrant_client(env_vars):
     logger.info(f"Connecting to Qdrant at {env_vars['url']}:{env_vars['port']}")
     
     try:
-        client = QdrantClient(
-            url=env_vars["url"],
-            port=env_vars["port"],
-            api_key=env_vars.get("api_key"), # Use .get for optional api_key
-        )
+        # Check if this is a cloud endpoint (contains hostname)
+        is_cloud = "http" in env_vars["url"] or "." in env_vars["url"]
+        
+        if is_cloud:
+            # For cloud endpoints, don't specify port separately
+            client = QdrantClient(
+                url=env_vars["url"],
+                api_key=env_vars.get("api_key"),
+                timeout=30,  # Reasonable timeout
+                prefer_grpc=False,  # Use HTTP protocol
+            )
+            logger.info(f"Using cloud configuration for {env_vars['url']}")
+        else:
+            # For local/custom endpoints
+            client = QdrantClient(
+                url=env_vars["url"],
+                port=env_vars["port"],
+                api_key=env_vars.get("api_key"),
+                timeout=30,
+                prefer_grpc=False,
+            )
+        
         # Test connection
         client.get_collections()
         logger.info("Successfully connected to Qdrant")
