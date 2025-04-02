@@ -35,9 +35,14 @@ def _parse_docs_from_arg(doc_arg: str):
         if isinstance(docs, dict):
             return [docs]
         elif isinstance(docs, list):
-            return docs
+            # Validate that each item in the list is a dictionary
+            if all(isinstance(doc, dict) for doc in docs):
+                return docs
+            else:
+                logger.error("Invalid JSON structure in --doc argument. All items in the list must be JSON objects.")
+                return None
         else:
-            logger.error(f"Invalid JSON structure in --doc argument. Expected a JSON object or list of objects.")
+            logger.error("Invalid JSON structure in --doc argument. Expected a JSON object or list of objects.")
             return None
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in --doc argument: {e}")

@@ -9,12 +9,15 @@ import builtins
 
 # Import functions under test
 from solr_manager.config import (
-    get_config_dir,
+    get_config_dir, 
     get_profiles,
-    load_config,
+    load_config, 
     DEFAULT_PROFILE,
     CONFIG_FILENAME,
-    get_config_file
+    get_config_file,
+    find_sample_config,
+    create_default_config,
+    update_config
 )
 
 # === Test get_config_dir ===
@@ -307,3 +310,271 @@ def test_load_config_create_default_fails_and_exits(mock_print, mock_exit, mock_
 
 # Remove old test_load_config_no_profiles_loaded - load_config now exits if file doesn't exist
 # Remove old test_load_config_merging_with_default - load_config doesn't merge
+
+# === Test find_sample_config ===
+
+@patch('solr_manager.config.logger')
+def test_find_sample_config_in_project_root(mock_logger):
+    """Test finding sample config in project root."""
+    from solr_manager.config import find_sample_config, SAMPLE_CONFIG_FILENAME
+    import os
+    
+    with patch('solr_manager.config.__file__', '/fake/path/config.py'), \
+         patch('os.path.dirname', return_value='/fake/path'), \
+         patch('os.path.join', side_effect=os.path.join), \
+         patch('os.path.isfile', side_effect=lambda p: p.endswith(SAMPLE_CONFIG_FILENAME)):
+        result = find_sample_config()
+    
+    assert result is not None
+    mock_logger.warning.assert_not_called()
+
+@patch('solr_manager.config.logger')
+def test_find_sample_config_in_cwd(mock_logger):
+    """Test finding sample config in current working directory."""
+    from solr_manager.config import find_sample_config, SAMPLE_CONFIG_FILENAME
+    import os
+    
+    def mock_isfile(path):
+        if path == os.path.join('/fake/path', SAMPLE_CONFIG_FILENAME):
+            return False
+        return path == SAMPLE_CONFIG_FILENAME
+    
+    with patch('solr_manager.config.__file__', '/fake/path/config.py'), \
+         patch('os.path.dirname', return_value='/fake/path'), \
+         patch('os.path.join', side_effect=os.path.join), \
+         patch('os.path.isfile', side_effect=mock_isfile):
+        result = find_sample_config()
+    
+    assert result is not None
+    mock_logger.warning.assert_not_called()
+
+@patch('solr_manager.config.logger')
+def test_find_sample_config_not_found(mock_logger):
+    """Test when sample config cannot be found."""
+    from solr_manager.config import find_sample_config, SAMPLE_CONFIG_FILENAME
+    from pathlib import Path
+    import os
+
+    # Create a real Path instance for __file__
+    fake_path = Path('/fake/path/config.py')
+    
+    with patch('solr_manager.config.__file__', str(fake_path)), \
+         patch.object(Path, 'is_file', return_value=False):
+        result = find_sample_config()
+        assert result is None
+        mock_logger.warning.assert_called_once_with(f"Could not automatically locate {SAMPLE_CONFIG_FILENAME}")
+
+# === Test create_default_config ===
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('solr_manager.config.ensure_config_dir')
+@patch('solr_manager.config.find_sample_config')
+@patch('shutil.copy')
+@patch('builtins.print')
+@patch('solr_manager.config.logger')
+def test_create_default_config_with_sample(mock_logger, mock_print, mock_copy, mock_find_sample, mock_ensure_dir, mock_get_file, mock_path_class):
+    """Test creating default config by copying sample file."""
+    mock_config_path = MagicMock()
+    mock_sample_path = MagicMock()
+    
+    mock_get_file.return_value = mock_config_path
+    mock_find_sample.return_value = mock_sample_path
+    mock_config_path.exists.return_value = False
+    
+    result = create_default_config()
+    
+    assert result == mock_config_path
+    mock_copy.assert_called_once_with(mock_sample_path, mock_config_path)
+    mock_print.assert_any_call(f"Sample configuration copied to {mock_config_path}")
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('solr_manager.config.ensure_config_dir')
+@patch('solr_manager.config.find_sample_config')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.dump')
+@patch('builtins.print')
+@patch('solr_manager.config.logger')
+def test_create_default_config_minimal(mock_logger, mock_print, mock_dump, mock_open, mock_find_sample, mock_ensure_dir, mock_get_file, mock_path_class):
+    """Test creating minimal default config when sample not found."""
+    mock_config_path = MagicMock()
+    
+    mock_get_file.return_value = mock_config_path
+    mock_find_sample.return_value = None  # Sample not found
+    mock_config_path.exists.return_value = False
+    
+    result = create_default_config()
+    
+    assert result == mock_config_path
+    mock_dump.assert_called_once()
+    # Verify minimal config structure
+    config_data = mock_dump.call_args[0][0]
+    assert "default" in config_data
+    assert "connection" in config_data["default"]
+    assert "solr_url" in config_data["default"]["connection"]
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('solr_manager.config.ensure_config_dir')
+@patch('solr_manager.config.find_sample_config')
+@patch('shutil.copy')
+@patch('solr_manager.config.logger')
+def test_create_default_config_copy_error(mock_logger, mock_copy, mock_find_sample, mock_ensure_dir, mock_get_file, mock_path_class):
+    """Test handling copy error when creating default config."""
+    mock_config_path = MagicMock()
+    mock_sample_path = MagicMock()
+    
+    mock_get_file.return_value = mock_config_path
+    mock_find_sample.return_value = mock_sample_path
+    mock_config_path.exists.return_value = False
+    mock_copy.side_effect = Exception("Copy failed")
+    
+    result = create_default_config()
+    
+    assert result is None
+    mock_logger.error.assert_called_once_with("Failed to copy sample configuration: Copy failed")
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('solr_manager.config.ensure_config_dir')
+@patch('solr_manager.config.find_sample_config')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.dump')
+@patch('solr_manager.config.logger')
+def test_create_default_config_write_error(mock_logger, mock_dump, mock_open, mock_find_sample, mock_ensure_dir, mock_get_file, mock_path_class):
+    """Test handling write error when creating minimal config."""
+    mock_config_path = MagicMock()
+    
+    mock_get_file.return_value = mock_config_path
+    mock_find_sample.return_value = None  # Sample not found
+    mock_config_path.exists.return_value = False
+    mock_dump.side_effect = Exception("Write failed")
+    
+    result = create_default_config()
+    
+    assert result is None
+    mock_logger.error.assert_called_once_with("Failed to create minimal configuration file: Write failed")
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+def test_create_default_config_exists(mock_get_file, mock_path_class):
+    """Test when config file already exists."""
+    mock_config_path = MagicMock()
+    mock_get_file.return_value = mock_config_path
+    mock_config_path.exists.return_value = True
+    
+    result = create_default_config()
+    
+    assert result == mock_config_path
+
+# === Test update_config ===
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('yaml.dump')
+@patch('solr_manager.config.logger')
+def test_update_config_success(mock_logger, mock_dump, mock_safe_load, mock_open, mock_get_file, mock_path_class):
+    """Test successful config update."""
+    mock_config_path = MagicMock()
+    mock_get_file.return_value = mock_config_path
+    mock_config_path.exists.return_value = True
+    
+    existing_config = {
+        "default": {
+            "connection": {
+                "solr_url": "http://old-url"
+            }
+        }
+    }
+    mock_safe_load.return_value = existing_config
+    
+    update_config("default", "solr_url", "http://new-url")
+    
+    # Verify the update was made correctly
+    updated_config = mock_dump.call_args[0][0]
+    assert updated_config["default"]["connection"]["solr_url"] == "http://new-url"
+    mock_logger.info.assert_called_once_with(
+        "Updated 'solr_url' in profile 'default' connection settings."
+    )
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('yaml.dump')
+@patch('solr_manager.config.logger')
+def test_update_config_new_profile(mock_logger, mock_dump, mock_safe_load, mock_open, mock_get_file, mock_path_class):
+    """Test updating config with a new profile."""
+    mock_config_path = MagicMock()
+    mock_get_file.return_value = mock_config_path
+    mock_config_path.exists.return_value = True
+    
+    mock_safe_load.return_value = {}  # Empty config
+    
+    update_config("new_profile", "solr_url", "http://new-url")
+    
+    # Verify new profile was created with correct structure
+    updated_config = mock_dump.call_args[0][0]
+    assert "new_profile" in updated_config
+    assert "connection" in updated_config["new_profile"]
+    assert updated_config["new_profile"]["connection"]["solr_url"] == "http://new-url"
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('solr_manager.config.logger')
+def test_update_config_invalid_yaml(mock_logger, mock_safe_load, mock_open, mock_get_file, mock_path_class):
+    """Test handling invalid YAML when updating config."""
+    mock_config_path = MagicMock()
+    mock_get_file.return_value = mock_config_path
+    mock_config_path.exists.return_value = True
+    
+    mock_safe_load.return_value = "not a dict"  # Invalid config
+    
+    update_config("default", "solr_url", "http://new-url")
+    
+    mock_logger.error.assert_called_once_with(
+        "Error loading configuration file for update: Config file is not a valid dictionary."
+    )
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('builtins.open', new_callable=mock_open)
+@patch('yaml.safe_load')
+@patch('yaml.dump')
+@patch('solr_manager.config.logger')
+def test_update_config_write_error(mock_logger, mock_dump, mock_safe_load, mock_open, mock_get_file, mock_path_class):
+    """Test handling write error when updating config."""
+    mock_config_path = MagicMock()
+    mock_get_file.return_value = mock_config_path
+    mock_config_path.exists.return_value = True
+    
+    mock_safe_load.return_value = {"default": {"connection": {}}}
+    mock_dump.side_effect = Exception("Write failed")
+    
+    update_config("default", "solr_url", "http://new-url")
+    
+    mock_logger.error.assert_called_once_with(
+        f"Failed to write updated configuration to {mock_config_path}: Write failed"
+    )
+
+@patch('pathlib.Path')
+@patch('solr_manager.config.get_config_file')
+@patch('solr_manager.config.create_default_config')
+@patch('solr_manager.config.logger')
+def test_update_config_create_fails(mock_logger, mock_create_default, mock_get_file, mock_path_class):
+    """Test handling create_default_config failure when updating config."""
+    mock_config_path = MagicMock()
+    mock_get_file.return_value = mock_config_path
+    mock_config_path.exists.return_value = False
+    mock_create_default.return_value = None
+    
+    update_config("default", "solr_url", "http://new-url")
+    
+    mock_logger.error.assert_called_once_with(
+        "Cannot update configuration: Failed to create default config file."
+    )

@@ -240,3 +240,199 @@ def test_cli_loglevel_option(mock_log_config, mock_list, mock_client_init, mock_
 
 # TODO: Add tests for overriding config values with command-line args 
 # TODO: Add tests for error handling in cli.main (e.g., config loading failure, client init failure)
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+@patch('solr_manager.cli.initialize_solr_client')
+def test_cli_dispatch_create_error(mock_init_client, mock_load_config, mock_logger):
+    """Test CLI dispatch when create command fails."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = {'solr_url': 'http://localhost:8983/solr'}
+    mock_init_client.side_effect = Exception("Client init failed")
+    
+    test_args = ['create', '--collection', 'test_coll', '--configset', 'test_config']
+    with patch('sys.argv', ['solr-manager'] + test_args):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+    
+    mock_logger.error.assert_called_with("An error occurred during command execution ('create'): Client init failed")
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+@patch('solr_manager.cli.initialize_solr_client')
+def test_cli_dispatch_delete_error(mock_init_client, mock_load_config, mock_logger):
+    """Test CLI dispatch when delete command fails."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = {'solr_url': 'http://localhost:8983/solr'}
+    mock_init_client.side_effect = Exception("Client init failed")
+    
+    test_args = ['delete', '--collection', 'test_coll']
+    with patch('sys.argv', ['solr-manager'] + test_args):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+    
+    mock_logger.error.assert_called_with("An error occurred during command execution ('delete'): Client init failed")
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+@patch('solr_manager.cli.initialize_solr_client')
+def test_cli_dispatch_info_error(mock_init_client, mock_load_config, mock_logger):
+    """Test CLI dispatch when info command fails."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = {'solr_url': 'http://localhost:8983/solr'}
+    mock_init_client.side_effect = Exception("Client init failed")
+    
+    test_args = ['info', '--collection', 'test_coll']
+    with patch('sys.argv', ['solr-manager'] + test_args):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+    
+    mock_logger.error.assert_called_with("An error occurred during command execution ('info'): Client init failed")
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+@patch('solr_manager.cli.initialize_solr_client')
+def test_cli_dispatch_batch_error(mock_init_client, mock_load_config, mock_logger):
+    """Test CLI dispatch when batch command fails."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = {'solr_url': 'http://localhost:8983/solr'}
+    mock_init_client.side_effect = Exception("Client init failed")
+    
+    test_args = ['batch', '--collection', 'test_coll', '--add-update', '--doc', '{"id": "1"}']
+    with patch('sys.argv', ['solr-manager'] + test_args):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+    
+    mock_logger.error.assert_called_with("An error occurred during command execution ('batch'): Client init failed")
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+@patch('solr_manager.cli.initialize_solr_client')
+def test_cli_dispatch_get_error(mock_init_client, mock_load_config, mock_logger):
+    """Test CLI dispatch when get command fails."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = {'solr_url': 'http://localhost:8983/solr'}
+    mock_init_client.side_effect = Exception("Client init failed")
+    
+    test_args = ['get', '--collection', 'test_coll', '--query', '*:*']
+    with patch('sys.argv', ['solr-manager'] + test_args):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+    
+    mock_logger.error.assert_called_with("An error occurred during command execution ('get'): Client init failed")
+
+@patch('solr_manager.cli.logger')
+def test_cli_command_import_error(mock_logger):
+    """Test CLI when command imports fail."""
+    from solr_manager.cli import main
+    import importlib
+    
+    # Save the original module
+    original_module = sys.modules['solr_manager.cli']
+    
+    try:
+        # Create a new module with ImportError for commands
+        spec = importlib.util.spec_from_file_location('solr_manager.cli', original_module.__file__)
+        new_module = importlib.util.module_from_spec(spec)
+        sys.modules['solr_manager.cli'] = new_module
+        
+        # Simulate ImportError for commands
+        with patch('solr_manager.cli.create_collection', side_effect=ImportError("Command not found")):
+            test_args = ['create', '--collection', 'test_coll', '--configset', 'test_config']
+            with patch('sys.argv', ['solr-manager'] + test_args):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+                assert exc_info.value.code == 1
+        
+        mock_logger.error.assert_called_with("An error occurred during command execution ('create'): Command not found")
+    finally:
+        # Restore the original module
+        sys.modules['solr_manager.cli'] = original_module
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+def test_cli_config_load_error(mock_load_config, mock_logger):
+    """Test CLI when configuration loading fails."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = None  # Simulate config load failure
+    
+    test_args = ['list']  # Any command that requires config
+    with patch('sys.argv', ['solr-manager'] + test_args):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+    
+    mock_logger.error.assert_called_with("Failed to load or validate configuration. Exiting.")
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+@patch('solr_manager.cli.initialize_solr_client')
+def test_cli_client_init_error(mock_init_client, mock_load_config, mock_logger):
+    """Test CLI when Solr client initialization fails."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = {'solr_url': 'http://localhost:8983/solr'}
+    mock_init_client.return_value = None  # Simulate client init failure
+    
+    test_args = ['get', '--collection', 'test_coll', '--query', '*:*']
+    with patch('sys.argv', ['solr-manager'] + test_args):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+    
+    mock_logger.error.assert_called_with("Failed to initialize Solr client. Exiting.")
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+def test_cli_missing_collection_error(mock_load_config, mock_logger):
+    """Test CLI when collection name is missing for commands that require it."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = {'solr_url': 'http://localhost:8983/solr'}  # No collection in config
+    
+    test_cases = [
+        ('create', ['create', '--configset', 'test_config']),
+        ('delete', ['delete']),
+        ('info', ['info']),
+        ('get', ['get', '--query', '*:*']),
+        ('batch', ['batch', '--add-update', '--doc', '{"id": "1"}'])
+    ]
+    
+    for command, args in test_cases:
+        with patch('sys.argv', ['solr-manager'] + args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+        
+        mock_logger.error.assert_any_call(f"Collection name is required for command '{command}'.")
+        mock_logger.error.assert_any_call("Please provide --collection argument or set 'collection' in your config/profile.")
+        mock_logger.reset_mock()
+
+@patch('solr_manager.cli.logger')
+@patch('solr_manager.cli.load_and_override_config')
+@patch('solr_manager.cli.initialize_solr_client')
+def test_cli_create_missing_configset(mock_init_client, mock_load_config, mock_logger):
+    """Test create command when configset is missing."""
+    from solr_manager.cli import main
+    
+    mock_load_config.return_value = {'solr_url': 'http://localhost:8983/solr'}
+    mock_init_client.return_value = MagicMock()
+    
+    test_args = ['create', '--collection', 'test_coll']  # Missing --configset
+    with patch('sys.argv', ['solr-manager'] + test_args):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+    
+    mock_logger.error.assert_called_with("--configset is required for the 'create' command.")

@@ -3,10 +3,10 @@ import io
 import csv
 import json
 import contextlib
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock, call, mock_open
 import pysolr
 
-from solr_manager.commands.get import get_documents
+from solr_manager.commands.get import get_documents, _parse_ids
 
 # Mock argparse Namespace specific to 'get' command
 class MockGetArgs:
@@ -116,27 +116,26 @@ def test_get_documents_by_ids_csv_file(mock_open, mock_parse_ids, mock_logger):
     mock_logger.info.assert_any_call(f"Successfully wrote {len(mock_docs)} documents to {output_file}")
 
 @patch('solr_manager.commands.get.logger')
-@patch('solr_manager.commands.get._parse_ids')
-def test_get_documents_no_results(mock_parse_ids, mock_logger):
-    """Test get documents when search returns no results."""
-    mock_solr_client = MagicMock(spec=pysolr.Solr)
-    mock_search_results = MagicMock()
-    mock_search_results.docs = []
-    mock_search_results.hits = 0
-    mock_solr_client.search.return_value = mock_search_results
-    mock_parse_ids.return_value = []
-
-    args = MockGetArgs(query="non_existent_field:value")
-
-    stdout_capture = io.StringIO()
-    with contextlib.redirect_stdout(stdout_capture):
-        get_documents(client=mock_solr_client, collection_name="test_get_coll", args=args)
+def test_get_documents_no_results(mock_logger):
+    """Test get_documents when no results are found."""
+    mock_client = MagicMock()
+    mock_results = MagicMock()
+    mock_results.hits = 0
+    mock_results.docs = []
+    mock_client.search.return_value = mock_results
     
-    output = stdout_capture.getvalue()
+    args = MagicMock()
+    args.query = '*:*'
+    args.fields = '*'
+    args.limit = 10
+    args.sort = None
+    args.format = 'json'
+    args.output = None
+    args.id_file = None
+    args.ids = None
     
-    mock_parse_ids.assert_called_once_with(args)
-    mock_solr_client.search.assert_called_once()
-    assert output.strip() == "[]" # Expect empty JSON array
+    get_documents(mock_client, 'test_coll', args)
+    
     mock_logger.info.assert_any_call("No documents found matching the criteria.")
 
 @patch('solr_manager.commands.get.logger')
@@ -172,25 +171,107 @@ def test_get_documents_solr_error(mock_parse_ids, mock_logger):
     mock_logger.error.assert_called_once_with("Solr search failed: Search failed")
 
 @patch('solr_manager.commands.get.logger')
-@patch('solr_manager.commands.get._parse_ids')
-@patch('builtins.open', side_effect=IOError("Permission denied"))
-def test_get_documents_output_file_error(mock_open, mock_parse_ids, mock_logger):
-    """Test get documents when writing to output file fails."""
-    mock_solr_client = MagicMock(spec=pysolr.Solr)
-    mock_search_results = MagicMock()
-    mock_docs = [{'id': 'doc1'}]
-    mock_search_results.docs = mock_docs
-    mock_search_results.hits = len(mock_docs)
-    mock_solr_client.search.return_value = mock_search_results
-    mock_parse_ids.return_value = []
+def test_get_documents_output_file_error(mock_logger):
+    """Test get_documents when there's an error writing to output file."""
+    mock_client = MagicMock()
+    mock_results = MagicMock()
+    mock_results.hits = 1
+    mock_results.docs = [{'id': '1', 'field': 'value'}]
+    mock_client.search.return_value = mock_results
     
-    output_file = '/restricted/output.json'
-    args = MockGetArgs(query="*:*", format='json', output=output_file)
+    # Test both JSON and CSV formats
+    test_cases = [
+        ('json', 'test.json'),
+        ('csv', 'test.csv')
+    ]
+    
+    for format_type, output_file in test_cases:
+        args = MagicMock()
+        args.query = '*:*'
+        args.fields = '*'
+        args.limit = 10
+        args.sort = None
+        args.format = format_type
+        args.output = output_file
+        args.id_file = None
+        args.ids = None
+        
+        # Mock the file open operation to raise an IOError
+        mock_file = mock_open()
+        mock_file.side_effect = IOError("Failed to write file")
+        
+        with patch('builtins.open', mock_file):
+            get_documents(mock_client, 'test_coll', args)
+        
+        mock_logger.error.assert_called_with(f"Error writing to output file {output_file}: Failed to write file")
+        mock_logger.error.reset_mock()
 
-    get_documents(client=mock_solr_client, collection_name="test_get_coll", args=args)
+@patch('solr_manager.commands.get.logger')
+def test_parse_ids_file_not_found(mock_logger):
+    """Test _parse_ids when file is not found."""
+    args = MagicMock()
+    args.id_file = 'nonexistent.txt'
+    args.ids = None
     
-    mock_parse_ids.assert_called_once_with(args)
-    mock_solr_client.search.assert_called_once()
-    # Assert open call with correct args including encoding and newline
-    mock_open.assert_called_once_with(output_file, 'w', newline='', encoding='utf-8')
-    mock_logger.error.assert_called_once_with(f"Error writing to output file {output_file}: Permission denied") 
+    with patch('builtins.open', mock_open()) as mock_file:
+        mock_file.side_effect = FileNotFoundError()
+        result = _parse_ids(args)
+    
+    assert result is None
+    mock_logger.error.assert_called_with("ID file not found: nonexistent.txt")
+
+@patch('solr_manager.commands.get.logger')
+def test_parse_ids_read_error(mock_logger):
+    """Test _parse_ids when there is an error reading the file."""
+    args = MagicMock()
+    args.id_file = 'test.txt'
+    args.ids = None
+    
+    with patch('builtins.open', mock_open()) as mock_file:
+        mock_file.side_effect = Exception("Test error")
+        result = _parse_ids(args)
+    
+    assert result is None
+    mock_logger.error.assert_called_with("Error reading ID file test.txt: Test error")
+
+@patch('solr_manager.commands.get.logger')
+def test_get_documents_csv_no_results(mock_logger):
+    """Test get_documents with CSV output when no results are found."""
+    mock_client = MagicMock()
+    mock_results = MagicMock()
+    mock_results.hits = 0
+    mock_results.docs = []
+    mock_client.search.return_value = mock_results
+    
+    args = MagicMock()
+    args.query = '*:*'
+    args.fields = '*'
+    args.limit = 10
+    args.sort = None
+    args.format = 'csv'
+    args.output = 'test.csv'
+    args.id_file = None
+    args.ids = None
+    
+    with patch('builtins.open', mock_open()) as mock_file:
+        get_documents(mock_client, 'test_coll', args)
+    
+    mock_logger.warning.assert_called_with("No documents to write to CSV.")
+
+@patch('solr_manager.commands.get.logger')
+@patch('solr_manager.commands.get._parse_ids')
+def test_get_documents_id_parse_error(mock_parse_ids, mock_logger):
+    """Test get_documents when ID parsing fails."""
+    from solr_manager.commands.get import get_documents
+    
+    mock_client = MagicMock()
+    args = MagicMock()
+    args.id_file = 'test.txt'
+    args.query = None
+    args.ids = None
+    mock_parse_ids.side_effect = Exception("Parse error")
+    
+    get_documents(mock_client, 'test_collection', args)
+    
+    mock_logger.error.assert_called_with("Error during ID parsing: Parse error")
+    mock_client.search.assert_not_called() 

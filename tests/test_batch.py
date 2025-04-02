@@ -1,7 +1,7 @@
 import pytest
 import json
 import io
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock, call, mock_open
 import pysolr
 
 from solr_manager.commands.batch import batch_operations
@@ -67,6 +67,7 @@ def test_batch_add_success(mock_parse_ids, mock_parse_docs, mock_logger):
 @patch('solr_manager.commands.batch.logger')
 @patch('solr_manager.commands.batch._parse_docs_from_arg') 
 @patch('solr_manager.commands.batch._parse_ids') 
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
 def test_batch_delete_by_id_success(mock_parse_ids, mock_parse_docs, mock_logger):
     """Test successful batch delete by ID operation."""
     mock_solr_client = MagicMock(spec=pysolr.Solr)
@@ -109,6 +110,7 @@ def test_batch_delete_by_id_success(mock_parse_ids, mock_parse_docs, mock_logger
 @patch('solr_manager.commands.batch.logger')
 @patch('solr_manager.commands.batch._parse_docs_from_arg') 
 @patch('solr_manager.commands.batch._parse_ids') 
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
 def test_batch_delete_by_query_success(mock_parse_ids, mock_parse_docs, mock_logger):
     """Test successful batch delete by query operation."""
     mock_solr_client = MagicMock(spec=pysolr.Solr)
@@ -136,6 +138,7 @@ def test_batch_delete_by_query_success(mock_parse_ids, mock_parse_docs, mock_log
 @patch('solr_manager.commands.batch.logger')
 @patch('solr_manager.commands.batch._parse_docs_from_arg') 
 @patch('solr_manager.commands.batch._parse_ids', side_effect=FileNotFoundError("File not found"))
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
 def test_batch_file_not_found_during_id_parse(mock_parse_ids, mock_parse_docs, mock_logger):
     """Test batch operation when ID file does not exist (error during parsing)."""
     mock_solr_client = MagicMock(spec=pysolr.Solr)
@@ -158,6 +161,7 @@ def test_batch_file_not_found_during_id_parse(mock_parse_ids, mock_parse_docs, m
 @patch('solr_manager.commands.batch.logger')
 @patch('solr_manager.commands.batch._parse_docs_from_arg', side_effect=json.JSONDecodeError("Bad JSON", "", 0))
 @patch('solr_manager.commands.batch._parse_ids') 
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
 def test_batch_invalid_json_during_doc_parse(mock_parse_ids, mock_parse_docs, mock_logger):
     """Test batch operation with invalid JSON (error during doc parsing)."""
     mock_solr_client = MagicMock(spec=pysolr.Solr)
@@ -180,6 +184,7 @@ def test_batch_invalid_json_during_doc_parse(mock_parse_ids, mock_parse_docs, mo
 @patch('solr_manager.commands.batch.logger')
 @patch('solr_manager.commands.batch._parse_docs_from_arg') 
 @patch('solr_manager.commands.batch._parse_ids') 
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
 def test_batch_solr_error(mock_parse_ids, mock_parse_docs, mock_logger):
     """Test handling of pysolr.SolrError during batch operation."""
     mock_solr_client = MagicMock(spec=pysolr.Solr)
@@ -204,6 +209,7 @@ def test_batch_solr_error(mock_parse_ids, mock_parse_docs, mock_logger):
 @patch('solr_manager.commands.batch.logger')
 @patch('solr_manager.commands.batch._parse_docs_from_arg') 
 @patch('solr_manager.commands.batch._parse_ids') 
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
 def test_batch_general_exception(mock_parse_ids, mock_parse_docs, mock_logger):
     """Test handling of unexpected exceptions during batch operation."""
     mock_solr_client = MagicMock(spec=pysolr.Solr)
@@ -229,6 +235,7 @@ def test_batch_general_exception(mock_parse_ids, mock_parse_docs, mock_logger):
 @patch('solr_manager.commands.batch.logger')
 @patch('solr_manager.commands.batch._parse_docs_from_arg') 
 @patch('solr_manager.commands.batch._parse_ids') 
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
 def test_batch_no_action_specified(mock_parse_ids, mock_parse_docs, mock_logger):
     """Test calling batch_operations without specifying an action."""
     mock_solr_client = MagicMock(spec=pysolr.Solr)
@@ -249,3 +256,107 @@ def test_batch_no_action_specified(mock_parse_ids, mock_parse_docs, mock_logger)
     mock_solr_client.delete.assert_not_called()
 
 # Removed test_batch_invalid_action as argparse handles this 
+
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
+def test_parse_ids_file_not_found():
+    """Test _parse_ids when the ID file doesn't exist."""
+    from solr_manager.commands.batch import _parse_ids
+    args = MagicMock()
+    args.id_file = 'nonexistent_file.txt'
+    args.ids = None
+    
+    result = _parse_ids(args)
+    assert result is None
+
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
+def test_parse_ids_file_read_error():
+    """Test _parse_ids when there's an error reading the file."""
+    from solr_manager.commands.batch import _parse_ids
+    args = MagicMock()
+    args.id_file = 'test_file.txt'
+    args.ids = None
+
+    mock_file = mock_open()
+    mock_file.side_effect = IOError("Failed to read file")
+
+    with patch('builtins.open', mock_file):
+        result = _parse_ids(args)
+        assert result is None
+
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
+def test_parse_docs_invalid_json_structure():
+    """Test _parse_docs_from_arg with invalid JSON structure."""
+    from solr_manager.commands.batch import _parse_docs_from_arg
+    
+    # Test with a JSON array of non-objects
+    result = _parse_docs_from_arg('[1, 2, 3]')
+    assert result is None
+
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
+def test_parse_docs_general_error():
+    """Test _parse_docs_from_arg with a general error."""
+    from solr_manager.commands.batch import _parse_docs_from_arg
+    
+    with patch('json.loads', side_effect=Exception("Mock error")):
+        result = _parse_docs_from_arg('{"id": 1}')
+    
+    assert result is None
+
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
+def test_batch_operations_id_parse_error():
+    """Test batch_operations when ID parsing fails."""
+    from solr_manager.commands.batch import batch_operations
+    
+    mock_client = MagicMock()
+    args = MagicMock()
+    args.delete_docs = True
+    args.add_update = False
+    args.id_file = 'test.txt'
+    args.ids = None
+    args.query = None
+    
+    with patch('solr_manager.commands.batch._parse_ids', side_effect=Exception("Mock parse error")):
+        batch_operations(mock_client, 'test_collection', args, {})
+    
+    mock_client.delete.assert_not_called()
+
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
+def test_batch_operations_delete_solr_error():
+    """Test batch_operations when Solr returns an error during delete."""
+    from solr_manager.commands.batch import batch_operations
+    import pysolr
+    
+    mock_client = MagicMock()
+    mock_client.delete.side_effect = pysolr.SolrError("Mock Solr error")
+    
+    args = MagicMock()
+    args.delete_docs = True
+    args.add_update = False
+    args.ids = "1,2,3"
+    args.id_file = None
+    args.query = None
+    args.commit = True
+    
+    batch_operations(mock_client, 'test_collection', args, {})
+    
+    mock_client.delete.assert_called_once()
+
+@patch('solr_manager.commands.batch.tqdm', new=lambda x, **kwargs: x)  # Disable tqdm progress bar
+def test_batch_operations_delete_unexpected_error():
+    """Test batch_operations when an unexpected error occurs during delete."""
+    from solr_manager.commands.batch import batch_operations
+    
+    mock_client = MagicMock()
+    mock_client.delete.side_effect = ValueError("Unexpected issue")
+    
+    args = MagicMock()
+    args.delete_docs = True
+    args.add_update = False
+    args.ids = "1,2,3"
+    args.id_file = None
+    args.query = None
+    args.commit = True
+    
+    batch_operations(mock_client, 'test_collection', args, {})
+    
+    mock_client.delete.assert_called_once() 

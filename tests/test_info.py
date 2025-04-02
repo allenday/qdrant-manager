@@ -144,3 +144,86 @@ def test_collection_info_no_admin_url(mock_logger, mock_get_admin_url):
     mock_logger.error.assert_called_once_with(
         "Could not determine Solr base URL from configuration."
     ) 
+
+@patch('solr_manager.commands.info.logger')
+@patch('solr_manager.commands.info.get_admin_base_url')
+def test_collection_info_missing_name(mock_get_base_url, mock_logger):
+    """Test collection_info when collection name is missing."""
+    collection_info("", {})
+    
+    mock_get_base_url.assert_not_called()
+    mock_logger.error.assert_called_once_with("Collection name is required for 'info' command.")
+
+@patch('solr_manager.commands.info.logger')
+@patch('solr_manager.commands.info.get_admin_base_url')
+@patch('solr_manager.commands.info.requests.get')
+def test_collection_info_not_found_with_available(mock_get, mock_get_base_url, mock_logger):
+    """Test collection_info when collection is not found but others exist."""
+    mock_get_base_url.return_value = "http://solr:8983"
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        'responseHeader': {'status': 0},
+        'cluster': {
+            'collections': {
+                'other_collection': {'some': 'data'}
+            }
+        }
+    }
+    mock_get.return_value = mock_response
+    
+    collection_info("test_collection", {})
+    
+    mock_logger.error.assert_called_with("Collection 'test_collection' not found in cluster status.")
+    mock_logger.info.assert_called_with("Available collections found in status: ['other_collection']")
+
+@patch('solr_manager.commands.info.logger')
+@patch('solr_manager.commands.info.get_admin_base_url')
+@patch('solr_manager.commands.info.requests.get')
+def test_collection_info_not_found_no_collections(mock_get, mock_get_base_url, mock_logger):
+    """Test collection_info when collection is not found and no others exist."""
+    mock_get_base_url.return_value = "http://solr:8983"
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        'responseHeader': {'status': 0},
+        'cluster': {
+            'collections': {}
+        }
+    }
+    mock_get.return_value = mock_response
+    
+    collection_info("test_collection", {})
+    
+    mock_logger.error.assert_called_with("Collection 'test_collection' not found in cluster status.")
+    mock_logger.info.assert_called_with("No collections found in cluster status response.")
+
+@patch('solr_manager.commands.info.logger')
+@patch('solr_manager.commands.info.get_admin_base_url')
+@patch('solr_manager.commands.info.requests.get')
+def test_collection_info_unexpected_response(mock_get, mock_get_base_url, mock_logger):
+    """Test collection_info when response format is unexpected."""
+    mock_get_base_url.return_value = "http://solr:8983"
+    mock_response = MagicMock()
+    mock_response.json.return_value = {'unexpected': 'format'}
+    mock_response.status_code = 200
+    mock_response.text = '{"unexpected": "format"}'
+    mock_get.return_value = mock_response
+    
+    collection_info("test_collection", {})
+    
+    mock_logger.error.assert_called_with(
+        "Unexpected response format during info request. Status: 200, Response: {\"unexpected\": \"format\"}"
+    )
+
+@patch('solr_manager.commands.info.logger')
+@patch('solr_manager.commands.info.get_admin_base_url')
+@patch('solr_manager.commands.info.requests.get')
+def test_collection_info_unexpected_error(mock_get, mock_get_base_url, mock_logger):
+    """Test collection_info when an unexpected error occurs."""
+    mock_get_base_url.return_value = "http://solr:8983"
+    mock_get.side_effect = Exception("Something went wrong")
+    
+    collection_info("test_collection", {})
+    
+    mock_logger.error.assert_called_with(
+        "An unexpected error occurred while getting info for 'test_collection': Something went wrong"
+    ) 

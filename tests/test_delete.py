@@ -79,4 +79,60 @@ def test_delete_collection_no_admin_url(mock_logger, mock_get_admin_url):
     mock_get_admin_url.assert_called_once_with(mock_config)
     mock_logger.error.assert_called_once_with(
         "Could not determine Solr base URL from configuration."
+    )
+
+@patch('solr_manager.commands.delete.logger')
+def test_delete_collection_missing_name(mock_logger):
+    """Test delete_collection when collection name is missing."""
+    delete_collection(None, {})
+    
+    mock_logger.error.assert_called_with("Collection name is required for 'delete' command.")
+
+@patch('solr_manager.commands.delete.logger')
+def test_delete_collection_unexpected_response(mock_logger):
+    """Test delete_collection when response format is unexpected."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"unexpected": "format"}'
+    mock_response.json.return_value = {"unexpected": "format"}
+    
+    with patch('requests.get', return_value=mock_response), \
+         patch('solr_manager.commands.delete.get_admin_base_url', return_value='http://localhost:8983/solr'):
+        delete_collection('test_collection', {})
+    
+    mock_logger.error.assert_called_with(
+        "Unexpected response format during delete. Status: 200, Response: {\"unexpected\": \"format\"}"
+    )
+
+@patch('solr_manager.commands.delete.logger')
+def test_delete_collection_timeout(mock_logger):
+    """Test delete_collection when request times out."""
+    with patch('requests.get', side_effect=requests.exceptions.Timeout), \
+         patch('solr_manager.commands.delete.get_admin_base_url', return_value='http://localhost:8983/solr'):
+        delete_collection('test_collection', {})
+    
+    mock_logger.error.assert_called_with(
+        "Timeout occurred while trying to delete collection 'test_collection' at http://localhost:8983/solr/admin/collections?action=DELETE&name=test_collection&wt=json"
+    )
+
+@patch('solr_manager.commands.delete.logger')
+def test_delete_collection_connection_error(mock_logger):
+    """Test delete_collection when connection error occurs."""
+    with patch('requests.get', side_effect=requests.exceptions.ConnectionError("Mock connection error")), \
+         patch('solr_manager.commands.delete.get_admin_base_url', return_value='http://localhost:8983/solr'):
+        delete_collection('test_collection', {})
+    
+    mock_logger.error.assert_called_with(
+        "Connection error occurred while trying to delete collection 'test_collection': Mock connection error"
+    )
+
+@patch('solr_manager.commands.delete.logger')
+def test_delete_collection_unexpected_error(mock_logger):
+    """Test delete_collection when an unexpected error occurs."""
+    with patch('requests.get', side_effect=Exception("Mock unexpected error")), \
+         patch('solr_manager.commands.delete.get_admin_base_url', return_value='http://localhost:8983/solr'):
+        delete_collection('test_collection', {})
+    
+    mock_logger.error.assert_called_with(
+        "An unexpected error occurred while deleting collection 'test_collection': Mock unexpected error"
     ) 

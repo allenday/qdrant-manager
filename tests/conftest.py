@@ -33,5 +33,5 @@ def mock_models():
 @pytest.fixture
 def mock_logger():
     """Create a mock for the logger."""
-    with patch('qdrant_manager.cli.logger') as mock_logger:
+    with patch('solr_manager.cli.logger') as mock_logger:
         yield mock_logger
